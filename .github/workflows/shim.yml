@@ -1,0 +1,39 @@
+name: shim
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "shim/**"
+      - ".github/workflows/shim.yml"
+
+concurrency:
+  group: shim-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    # Cross-compiles the shim with gcc-aarch64-linux-gnu per shim/build-ci.sh
+    # (compile/link only; the boot image is packed locally from this artifact,
+    # the xnu workflow's kernel artifact, the generated ADT and the stock
+    # merlin DTB, which is a device artifact and never in git).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+
+      - name: Build shim
+        working-directory: shim
+        run: bash build-ci.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: merlin-shim
+          path: shim/out/shim-merlin.bin
+          if-no-files-found: error
