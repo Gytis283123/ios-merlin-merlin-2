@@ -13,6 +13,10 @@
 #define GREEN	0xff00ff00U
 
 extern volatile uint32_t *con_fb;
+/* Runtime console geometry; defaults are the sweet framebuffer until
+ * con_init() replaces them (merlin gets its values from the LK DTB). */
+extern uint32_t con_w, con_h, con_stride;
+void con_init(uint64_t base, uint32_t w, uint32_t h, uint32_t stride);
 
 void con_clear(uint32_t bg);
 void con_skip(void);
