@@ -39,7 +39,7 @@ jobs:
     # macos-14 was retired by GitHub (2026-11: 'configuration not supported');
     # macos-15 builds this tree fine (proven: 9-minute successful run on the
     # fork, 2026-11-06). The xnu-8796 source version comes from MACOS_VERSION.
-    runs-on: macos-13-large
+    runs-on: macos-13
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
