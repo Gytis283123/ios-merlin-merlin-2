@@ -69,6 +69,7 @@ void merlin_main(uint64_t dtb)
 	con_hex2("FB", "at=", (uint32_t)merlin_fb_base(dtb), "geom=",
 		 (MERLIN_FB_W << 16) | MERLIN_FB_H);
 	con_hex2("MPIDR", "val=", (uint32_t)mpidr(), "frq=", (uint32_t)cntfrq());
+	con_hex2("RD", "fb=", (uint32_t)merlin_ramdisk(dtb), "initrd=", 0);
 	con_skip();
 
 	const char *why = loader_boot(dtb);
