@@ -62,7 +62,7 @@ void merlin_main(uint64_t dtb)
 {
 	merlin_wdt_stop();
 	con_init(merlin_fb_base(dtb), MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
-	con_clear(BLUE);
+	con_clear(RED);
 
 	con_str("MERLIN", "shim up (toprgu stopped)");
 	con_hex2("DTB", "at=", (uint32_t)dtb, "magic=", dtb ? *(volatile uint32_t *)dtb : 0);
