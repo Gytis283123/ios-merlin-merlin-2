@@ -14,7 +14,7 @@
  *   "atag,videolfb-fb_base_h" (u32, 0 on this SoC). Panel 1080x2340, 32bpp.
  * - boot.img load addresses (stock merlin mkbootimg args: base 0x40078000,
  *   kernel_offset 0x8000, ramdisk_offset 0x07c08000): the ramdisk we pack
- *   lands at 0x47c08000. LK normally also publishes /chosen
+ *   lands at 0x47c80000. LK normally also publishes /chosen
  *   linux,initrd-start/end for the boot ramdisk; try those first.
  */
 
@@ -30,6 +30,6 @@
 #define MERLIN_FB_STRIDE	(MERLIN_FB_W * 4)
 #define MERLIN_FB_FALLBACK	0x7e605000UL	/* dts atag,videolfb default */
 
-#define MERLIN_RAMDISK_FALLBACK	0x47c08000UL	/* base 0x40078000 + 0x07c08000 */
+#define MERLIN_RAMDISK_FALLBACK	0x47c80000UL	/* base 0x40078000 + 0x07c08000 */
 
 void merlin_main(uint64_t dtb) __attribute__((noreturn));

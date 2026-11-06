@@ -4,7 +4,7 @@
 Layout of a merlin test image:
   kernel  = the shim (shim/build-ci.sh artifact), loaded at 0x40080000
   ramdisk = the SWEETXNU payload (tools/mkpayload.py: xnu + ADT + cmdline),
-            loaded at 0x47c08000 — the shim finds it there (or via the
+            loaded at 0x47c80000 — the shim finds it there (or via the
             /chosen initrd properties LK publishes)
   dtb     = optional; stock merlin DTB (device artifact, never in git).
             Without it, LK passes its own tree (dtb partition + dtbo merge).

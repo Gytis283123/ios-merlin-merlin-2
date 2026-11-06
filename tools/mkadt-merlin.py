@@ -11,7 +11,7 @@ LK-injected runtime DTB.
 
 Layout for the RAM-disk milestone (M1):
   - The shim runs where LK loaded it (0x40080000), the boot.img ramdisk sits
-    at 0x47c08000 and the LK splash framebuffer at 0x7e605000. The kernel is
+    at 0x47c80000 and the LK splash framebuffer at 0x7e605000. The kernel is
     therefore loaded and managed at 0x50000000 .. 0x7e000000 (464 MiB).
     M2+ widens this from the live DTB /memory node.
   - The LK framebuffer (0x7e605000, panel 1080x2340) must stay outside the
@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import adt  # noqa: E402
 
 # Kernel-managed RAM for M1: clear of the shim (0x40080000), the boot.img
-# ramdisk (0x47c08000 + payload size) and the LK framebuffer (0x7e605000).
+# ramdisk (0x47c80000 + payload size) and the LK framebuffer (0x7e605000).
 PHYS_BASE = 0x50000000
 MEM_SIZE = 0x2e000000
 # Panic log buffer carved from the TOP of the managed range, exposed as

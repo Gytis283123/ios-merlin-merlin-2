@@ -82,18 +82,18 @@ Built and pushed (all on `ios-merlin-merlin-2` main):
   (0x10007000, keyed wdt_v2 writes from the device kernel source), console
   on the LK splash framebuffer (address read live from the DTB /chosen
   `atag,videolfb-fb_base_l/h`, fallback 0x7e605000), payload discovery via
-  /chosen initrd with fallback to 0x47c08000 (stock ramdisk load address),
+  /chosen initrd with fallback to 0x47c80000 (stock ramdisk load address),
   then the upstream loader; on any failure it HOLDS on screen (watchdog
   off) with a diagnostics banner. `console.c/h` gained runtime geometry
   (`con_init`), loader.c exports it in boot_args Video.
 - `tools/mkadt-merlin.py` — fresh merlin ADT: GICv3 0x0c000000/0x0c040000,
   vtimer INTID 27, timebase 13 MHz, 8 CPU nodes (reg 0x000..0x700), kernel
-  band 0x50000000+0x2e000000 (clear of shim@0x40080000, ramdisk@0x47c08000,
+  band 0x50000000+0x2e000000 (clear of shim@0x40080000, ramdisk@0x47c80000,
   LK fb@0x7e605000), fbcon/disp0 native 1080x2340, panic log at top,
   synthetic ECID 'MERL'+1, chip-id 0x8015 (A11 userland identity as sweet).
   Generated locally OK (9948 bytes; no /product until d22ap.adt exists).
 - `tools/mkbootimg-merlin.py` — fresh boot v2 packer with the stock merlin
-  slots (kernel 0x40080000, ramdisk 0x47c08000, page 2048; dtb optional).
+  slots (kernel 0x40080000, ramdisk 0x47c80000, page 2048; dtb optional).
 - CI: `shim.yml` green (artifact `merlin-shim`, run 42249609609, shim
   151,552 bytes SHA256 in artifacts/). `xnu.yml` moved to `runs-on:
   macos-15` (macos-14 label retired) + no cancel-in-progress; the whole
@@ -109,7 +109,7 @@ facts below supersede earlier guesses):
 - USB is **MTK musb**-family USB 2.0 device controller at 0x11200000
   (not mtu3/DWC3) — matters for a later USB milestone.
 - Boot.img (stock): header v2, base 0x40078000 → kernel 0x40080000,
-  ramdisk 0x47c08000, page 2048, Image.gz + appended DTB + dtbo.img.
+  ramdisk 0x47c80000, page 2048, Image.gz + appended DTB + dtbo.img.
 - `fastboot boot` confirmed working on unlocked merlin (some flakiness
   reported on XDA); panel = DSI video-mode LCD (NT36672A/FT8719 per unit),
   LK hands it over initialized (continuous splash) — good for early console.
