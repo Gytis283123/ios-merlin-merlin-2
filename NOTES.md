@@ -74,13 +74,67 @@ DTB pulled from the phone itself:
   LK passes its own stock tree; add stock DTB later if needed),
   (d) boot M1 image on the phone (fastboot boot), film the screen.
 
+### Update 2026-11-06 (session 1, continued)
+
+Built and pushed (all on `ios-merlin-merlin-2` main):
+
+- `shim/merlin.{c,h}` — fresh merlin bring-up: toprgu watchdog stop FIRST
+  (0x10007000, keyed wdt_v2 writes from the device kernel source), console
+  on the LK splash framebuffer (address read live from the DTB /chosen
+  `atag,videolfb-fb_base_l/h`, fallback 0x7e605000), payload discovery via
+  /chosen initrd with fallback to 0x47c08000 (stock ramdisk load address),
+  then the upstream loader; on any failure it HOLDS on screen (watchdog
+  off) with a diagnostics banner. `console.c/h` gained runtime geometry
+  (`con_init`), loader.c exports it in boot_args Video.
+- `tools/mkadt-merlin.py` — fresh merlin ADT: GICv3 0x0c000000/0x0c040000,
+  vtimer INTID 27, timebase 13 MHz, 8 CPU nodes (reg 0x000..0x700), kernel
+  band 0x50000000+0x2e000000 (clear of shim@0x40080000, ramdisk@0x47c08000,
+  LK fb@0x7e605000), fbcon/disp0 native 1080x2340, panic log at top,
+  synthetic ECID 'MERL'+1, chip-id 0x8015 (A11 userland identity as sweet).
+  Generated locally OK (9948 bytes; no /product until d22ap.adt exists).
+- `tools/mkbootimg-merlin.py` — fresh boot v2 packer with the stock merlin
+  slots (kernel 0x40080000, ramdisk 0x47c08000, page 2048; dtb optional).
+- CI: `shim.yml` green (artifact `merlin-shim`, run 42249609609, shim
+  151,552 bytes SHA256 in artifacts/). `xnu.yml` moved to `runs-on:
+  macos-15` (macos-14 label retired) + no cancel-in-progress; the whole
+  tree was renormalized to LF (CRLF committed shell scripts broke the CI
+  patch-staging: `set: pipefail: invalid option name`).
+- Kernel build for the baseline (upstream patches 0001–0081): run
+  42249609626 in flight at the time of writing.
+
+Hardware-fact corrections from the full merlin kernel-source research
+(downloaded to `repo/research/merlin/` outside this repo; USB/panel/boot
+facts below supersede earlier guesses):
+
+- USB is **MTK musb**-family USB 2.0 device controller at 0x11200000
+  (not mtu3/DWC3) — matters for a later USB milestone.
+- Boot.img (stock): header v2, base 0x40078000 → kernel 0x40080000,
+  ramdisk 0x47c08000, page 2048, Image.gz + appended DTB + dtbo.img.
+- `fastboot boot` confirmed working on unlocked merlin (some flakiness
+  reported on XDA); panel = DSI video-mode LCD (NT36672A/FT8719 per unit),
+  LK hands it over initialized (continuous splash) — good for early console.
+- CPU MPIDR encodings disagree between DT cpu reg (0x000..0x700), node names
+  and cpu-map — read MPIDR_EL1 on hardware before SMP (M3).
+- A parsed stock-derived runtime DTB exists at
+  `repo/research/merlin/merlin-dtb.img` (+ `dtb-full.txt` dump) — a
+  cross-check source; the user's choice for the git-of-record DTB is
+  extraction from the phone itself.
+
+M1a test plan (next): payload = CI kernel + merlin ADT + cmdline
+`debug=0xc serial=3 cpus=1 keepsyms=1 -enable_kprintf_spam -noprogress`
+(no rootfs — expect the kernel boot log on the panel via the fbcon, ending
+in mountroot retries = proof of execution). Package with mkpayload +
+mkbootimg-merlin, `fastboot boot` (RAM-only). The shim banner prints the
+LIVE fb base — compare against the ADT's 0x7e605000 constant afterwards.
+
 ## Open items
 
-- Stock merlin DTB: user chose to extract it **from the phone** (pending:
-  needs Android+adb root or a bootable recovery; not required if the first
-  test boots without `--dtb`).
-- `/product` identity node for the ADT needs the Apple D22AP device tree
-  (`research/ipsw-x/d22ap.adt`, Apple artifact, not in git) — not needed for
-  M1; required before userland identity work.
-- Fastboot device `204719200409` is attached to this PC — confirm with the
-  user it is the Note 9 before any boot attempt.
+- Confirm the attached fastboot device (`204719200409`) is the Note 9
+  before any boot attempt.
+- Stock merlin DTB: extract from the phone (user's choice) for the
+  `--dtb` path if LK's own tree proves insufficient; TWRP-derived copy
+  exists for cross-check (see above).
+- `/product` identity node needs the Apple D22AP device tree
+  (`research/ipsw-x/d22ap.adt`, Apple artifact, not in git) — not needed
+  for M1; required before userland identity work.
+
