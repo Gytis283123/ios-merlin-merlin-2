@@ -24,7 +24,7 @@ for f in $FILES; do [ "${f##*.}" = c ] && COBJ="$COBJ out/${f%.*}.o"; done
 abs=$($READELF -r $COBJ | grep -c ABS64 || true)
 [ "$abs" = 0 ] || { echo "error: $abs absolute relocations in C objects" >&2; exit 1; }
 $CC $CFLAGS -static -T shim.ld -Wl,--build-id=none -Wl,--no-warn-rwx-segments -Wl,-N \
-	$OBJFILES -o out/shim.elf
+	$COBJ out/start.o -o out/shim.elf
 $OBJCOPY -O binary out/shim.elf out/shim-merlin.bin
 size=$($NM out/shim.elf | awk '$3=="_end"{print strtonum("0x"$1)}')
 truncate -s "$size" out/shim-merlin.bin
