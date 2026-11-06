@@ -138,3 +138,19 @@ LIVE fb base — compare against the ADT's 0x7e605000 constant afterwards.
   (`research/ipsw-x/d22ap.adt`, Apple artifact, not in git) — not needed
   for M1; required before userland identity work.
 
+
+### Device state findings (2026-11-06 evening, user-confirmed + verified)
+
+- **`fastboot boot` is NOT supported on this unit's bootloader** (user;
+  web research and older handoffs claiming otherwise are wrong for this
+  phone). Test path = flash to the boot partition and restore from backup.
+- Booted to TWRP recovery: adb works with root (uid=0). Partition backups
+  pulled (in `backup/`, NOT in git): boot 96bc3fe1…, recovery
+  (TWRP) 3a32adaa…, vbmeta 8385d0f5….
+- **vbmeta flags = 0x03** (hashtree + verification disabled): the October
+  "STEP 0" was done; unsigned boot images boot.
+- **The boot partition currently contains the old 0117-era XNU test image**
+  (190,674-byte shim + 16.7 MB payload, ramdisk slot 0x47c80000 — matches
+  the fresh packer's addresses byte-for-byte). Stock Android boot is NOT on
+  the phone; restore later = flash boot from the official merlin fastboot
+  ROM. The shim bring-up screen color is RED (project signal convention).
