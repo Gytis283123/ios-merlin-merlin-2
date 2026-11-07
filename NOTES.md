@@ -207,3 +207,22 @@ LIVE fb base — compare against the ADT's 0x7e605000 constant afterwards.
   header verbatim (verified: zero byte diffs outside the three sizes) +
   v3 shim (asm watchdog kill + MMU hardening + color ladder) + raw payload
   + stock DTB. This is the next flash test.
+
+### ROOT CAUSE FOUND (2026-11-07, v5 loop + msdc-image comparison)
+
+- The msdc-era images that demonstrably booted (0120/0121 — "SpringBoard
+  doing real I/O" per their commit messages) have kernel slots starting
+  `1f 8b 08` — **GZIP**, byte-identical convention to the stock
+  Image.gz kernel. The earlier "corrupted gzip" conclusion was an
+  analysis bug: the gzip header bytes were fed to a raw-deflate
+  decompressor; the stream is valid (dynamic Huffman).
+- **This LK requires the kernel slot gzipped.** Every one of our five
+  bootloops (M1a, diag, m1a-dtb, v2, v3, v5) had a RAW kernel slot — LK's
+  decompressor rejected it before the shim's first instruction. The header
+  experiments (8 s vs 25 s cycles) were LK failing at different stages of
+  a path that was doomed anyway.
+- **v6** (`out/shim-boot-merlin-m1a-v6.img`, SHA256 d784677e…): stock
+  header verbatim + kernel slot = gzip -9 (shim, 151,552 → 5,172 bytes,
+  round-trip verified) + raw payload + stock DTB. Flash test pending.
+- v17 probe images: raw kernel slots — their README "6 colors" table was a
+  decision tree, NOT a recorded success; every v9-v17 probe bootlooped too.
