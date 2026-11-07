@@ -49,9 +49,7 @@ TIMEBASE = 13000000
 # LK splash framebuffer: merlin.dts /chosen atag,videolfb-fb_base_l (the dts
 # default; LK patches the live value at boot — cross-check on first boot).
 FB, FB_SIZE = 0x7e605000, 0x17e8000
-# The LK logo fb is 720x1440 (half the panel; the pipe upscales) - the
-# sibling MT6765 UEFI port's PCDs confirm the geometry family.
-FB_W, FB_H, FB_STRIDE = 720, 1440, 720 * 4
+FB_W, FB_H, FB_STRIDE = 1080, 2340, 1080 * 4
 
 # merlin.dts cpus: reg 0x000..0x700 (Aff1:Aff0), A55 1.701 GHz, A75 2.171 GHz
 A55_FREQ = 1701000000

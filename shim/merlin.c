@@ -258,6 +258,17 @@ void merlin_main(uint64_t dtb)
 	con_clear(GREEN);
 
 	con_clear(RED);
+	/* Pitch measurement: a full-height vertical line at fb x=540, drawn
+	 * with stride 4320. If the panel's true pitch differs, the line
+	 * drifts horizontally: drift_px over the full height gives
+	 *   true_pitch = 4320 - 4 * drift_px / 2339  (drift = x_bottom - x_top,
+	 *   positive = line leans left going down). Photograph and measure. */
+	{
+		volatile uint32_t *fb = con_fb;
+		for (uint32_t y = 0; y < con_h; y++)
+			for (uint32_t dx = 0; dx < 2; dx++)
+				fb[y * (con_stride / 4) + 540 + dx] = 0xFFFFFFFF;
+	}
 	con_str("MERLIN", "shim up (toprgu stopped)");
 	paint_pitch_lineup(rpitch_val, opitch_val);
 	con_hex2("SCAN", "rdma=", rdma_val, "ovl=", ovl_val);

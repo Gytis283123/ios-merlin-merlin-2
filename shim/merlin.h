@@ -25,12 +25,8 @@
 #define MERLIN_WDT_IRQ_CLR_KEY	0x23000000UL
 #define MERLIN_WDT_IRQ_CLR_MASK	0x000001ffUL
 
-/* The LK logo framebuffer is 720x1440 (half the panel's 1080x2340 - the
- * display pipe upscales). Confirmed by the sibling MT6765 UEFI port's PCDs
- * (PcdMipiFrameBufferWidth/Height = 720/1440) and matches every display
- * symptom from v6-v16. */
-#define MERLIN_FB_W		720
-#define MERLIN_FB_H		1440
+#define MERLIN_FB_W		1080
+#define MERLIN_FB_H		2340
 #define MERLIN_FB_STRIDE	(MERLIN_FB_W * 4)
 #define MERLIN_FB_FALLBACK	0x7e605000UL	/* dts atag,videolfb default */
 /* atag,videolfb points at the START of the 24.9MB LK vram carve-out
