@@ -28,8 +28,9 @@ _start:
 	movz	x2, #0x7000
 	movk	x2, #0x1000, lsl #16	/* x2 = 0x10007000 (toprgu MODE) */
 	ldr	w3, [x2]
-	bic	w3, w3, #1		/* clear ENABLE, write-key in top byte */
-	orr	w3, w3, #0x22000000
+	movz	w4, #0x2200, lsl #16	/* MODE_KEY */
+	bic	w3, w3, #1		/* clear ENABLE */
+	orr	w3, w3, w4		/* | key */
 	str	w3, [x2]
 	dsb	sy
 	msr	daifset, #0xf
