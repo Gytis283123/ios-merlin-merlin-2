@@ -214,14 +214,22 @@ void merlin_main(uint64_t dtb)
 	uint32_t l1 = (uint32_t)atag_fb;
 
 	con_scale = cfg_s;
-	con_init2(l0, l1, cfg_w, cfg_h, cfg_p, 1440);
+	uint32_t opitch = rd32(MERLIN_OVL_L0_PITCH);
+	uint32_t ooff = rd32(MERLIN_OVL_L0_OFFSET);
+	uint32_t osize = rd32(MERLIN_OVL_L0_SRC_SIZE);
+	/* The OVL L0 pitch = the hardware's own row step for the visible
+	 * buffer. Use it verbatim as the console stride (bytes). */
+	uint32_t stride = opitch;
+	if (stride < 64 || stride > 16384 || (stride & 3))
+		stride = cfg_p;
+	con_init2(l0, l1, cfg_w, cfg_h, stride, 1440);
 	con_clear(RED);
 	con_str("MERLIN", "shim up (toprgu stopped)");
 	con_hex2("CFG", "w=", cfg_w, "h=", cfg_h);
-	con_hex2("CFGP", "p=", cfg_p, "s=", cfg_s);
+	con_hex2("L0R", "pit=", opitch, "off=", ooff);
+	con_hex2("L0S", "size=", osize, "cfgp=", cfg_p);
 	con_hex2("LAY", "l0=", l0, "l1=", l1);
 	con_hex2("REGS", "l1r=", l1reg, "rdma=", rdma_val);
-	con_hex2("SCAN", "rdma=", rdma_val, "pitch=", cfg_p);
 	con_hex2("DTB", "at=", (uint32_t)dtb, "magic=", dtb ? *(volatile uint32_t *)dtb : 0);
 	con_hex2("FB", "at=", (uint32_t)merlin_fb_base(dtb), "geom=",
 		 (MERLIN_FB_W << 16) | MERLIN_FB_H);
