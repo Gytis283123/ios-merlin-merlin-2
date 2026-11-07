@@ -134,7 +134,7 @@ static int mem_cb(const struct fdt_mem_ent *e, void *ctx)
  *   merlinfb_w=<px>  merlinfb_h=<px>  merlinfb_p=<bytes/line>
  *   merlinfb_b=<hex base>  merlinfb_s=<font scale>
  * Defaults: 1080x2340, pitch 4320, base = the RDMA register, scale 2. */
-static uint32_t cfg_w = 1080, cfg_h = 2340, cfg_p = 4320, cfg_s = 2;
+static uint32_t cfg_w = 1080, cfg_h = 2340, cfg_p = 4352, cfg_s = 3;
 static uint32_t cfg_base;
 
 static uint32_t cl_val(const char *cl, const char *key)

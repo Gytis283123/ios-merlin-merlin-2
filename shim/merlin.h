@@ -27,7 +27,10 @@
 
 #define MERLIN_FB_W		1080
 #define MERLIN_FB_H		2340
-#define MERLIN_FB_STRIDE	(MERLIN_FB_W * 4)
+/* The panel scans at a 64-byte-aligned pitch: 1080*4 = 4320 rounds up to
+ * 1088*4 = 4352 (the vramSize arithmetic confirms: 4352 x 2340 x 4 =
+ * 10,183,680 bytes of scan inside the 0x17E8000 vram). */
+#define MERLIN_FB_STRIDE	(1088 * 4)
 #define MERLIN_FB_FALLBACK	0x7e605000UL	/* dts atag,videolfb default */
 /* atag,videolfb points at the START of the 24.9MB LK vram carve-out
  * (vramSize 0x17e8000). NOTE: drawing at base + (vramSize - fb) broke the

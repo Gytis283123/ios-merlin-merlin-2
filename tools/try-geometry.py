@@ -28,7 +28,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('w', nargs='?', type=int, default=1080)
     ap.add_argument('h', nargs='?', type=int, default=2340)
-    ap.add_argument('pitch', nargs='?', type=int, default=4320)
+    ap.add_argument('pitch', nargs='?', type=int, default=4352)
     ap.add_argument('--scale', type=int, default=2)
     ap.add_argument('--base', default=None, help='hex fb base override')
     ap.add_argument('--out', default=os.path.join(OUT, 'try.img'))
