@@ -283,7 +283,40 @@ user's photos:
   host_test.exe -> out/host.ppm): identical code renders pixel-perfect
   on the host - all phone-side artifacts were environmental.
 
+### DIAGNOSIS + FIX: EL2→EL1 drop before the XNU jump (2026-11-07 late, session on the Windows copy)
+
+- Re-verified the v34 photo readout offline: `out/payload-try.bin` header
+  decodes to entry VA 0xFFFFFE0007490488 → jump PA 0x51490488, **8-byte
+  aligned** (the photo's `...048B` was a blurry digit). The entry address is
+  NOT the bug; the kernel genuinely dies/hangs before its first kprintf.
+- **Prime suspect identified: exception level.** `shim/start.S` documented
+  "ABL enters at EL1" (the Qualcomm assumption). Merlin's LK jumps the shim
+  via MTK ATF's "smc jump", which may deliver **EL2**. XNU xnu-8796
+  `osfmk/arm64/start.s` (`_start` → `start_first_cpu` → `common_start`) is
+  EL1-only: VBAR_EL1, SPSel/SP_EL1, tlbi vmalle1. At EL2, the first early
+  exception vectors through UNSET VBAR_EL2 (= 0) → silent instant death —
+  exactly "banner, jump, nothing".
+- **Fix (shim-only, commit 5d37d64, shim CI run 42400125367 green):**
+  `enter_xnu(entry_pa, ba_pa)` in start.S — at EL1 it is a plain `br x0`
+  (identical to before, so sweet/QEMU behavior is unchanged); at EL2 it
+  ERETs to EL1h with DAIF masked, CNTVOFF=0, CNTHCTL EL1PCTEN|EL1PCEN,
+  HCR_EL2=0, SCTLR_EL1/VBAR_EL1 at reset values, x0 = boot_args PA.
+  The banner now prints `BOOTEL el=` (1=EL1, 2=EL2) before the jump —
+  photo evidence of what ATF actually delivered either way.
+- **Flash test ready: `out/shim-boot-merlin-v35-el.img`** SHA256
+  bf2692ca…cbf73 (kernel 0082b 05429bcd… unchanged, new shim 58cfa6cf…,
+  payload rebuilt 312a6f3f… same size, stock DTB, stock header clone).
+  Flash to boot (user), phone → look for `BOOTEL el=` on the banner and
+  whether kernel kprintf output now appears on the panel.
+- If still dead WITH `BOOTEL el= 2` shown → the drop ran; next suspect is
+  the kernel-side entry paint ladder (patch 0083: color at `_start`'s first
+  instructions) to bisect how far XNU gets.
+- If still dead WITH `BOOTEL el= 1` → ATF already delivers EL1 and the EL
+  theory is dead; revisit CPU state (CNTCR/timer gating, GIC state) or go
+  straight to the 0083 entry ladder.
+
 ### DISPLAY SOLVED (2026-11-07 evening, v6-v33, user-confirmed full panel)
+
 
 The final geometry, all hardware-sourced (v32's register reads + the user's
 v33 full-panel confirmation):
