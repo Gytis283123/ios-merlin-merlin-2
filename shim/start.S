@@ -116,6 +116,40 @@ cache_clean_inv_all:
 	dsb	sy
 9:	ret
 
+/* Enter XNU. x0 = kernel entry PA, x1 = boot_args PA.
+ *
+ * XNU's early code is EL1-only (VBAR_EL1, SPSel, SP_EL1, tlbi vmalle1) and
+ * its early exception vectors are VBAR_EL1. The Qualcomm ABL entered the
+ * shim at EL1 (start.S header note), but merlin's LK hands off through MTK
+ * ATF's "smc jump", which may deliver EL2. At EL2 the kernel would run far
+ * enough to write EL1 system registers, then take its first exception to an
+ * UNSET VBAR_EL2 (= 0) and die silently - the observed "jump, then nothing"
+ * wall. So: at EL1 (or lower) just branch; at EL2 do a proper ERET drop to
+ * EL1h with DAIF masked, the generic timer routed to EL1 physical, CNTVOFF
+ * zeroed and SCTLR_EL1/VBAR_EL1 at their reset values. Never returns. */
+	.globl enter_xnu
+enter_xnu:
+	mrs	x2, CurrentEL
+	cmp	x2, #0x8		/* CurrentEL: 0x4=EL1, 0x8=EL2 */
+	b.ne	1f
+	/* EL2 path */
+	mov	x3, #0x5		/* SPSR: M=EL1h */
+	orr	x3, x3, #0x3c0		/* | DAIF masked */
+	msr	spsr_el2, x3
+	msr	elr_el2, x0
+	msr	cntvoff_el2, xzr
+	mrs	x4, cnthctl_el2
+	orr	x4, x4, #3		/* EL1PCTEN | EL1PCEN: EL1 sees the phys timer */
+	msr	cnthctl_el2, x4
+	msr	hcr_el2, xzr		/* no stage-2, no traps into EL2 */
+	msr	vbar_el1, xzr
+	msr	sctlr_el1, xzr		/* reset value: MMU/C/I off */
+	isb
+	mov	x0, x1			/* boot_args */
+	eret
+1:	/* EL1 (or EL3, which the BOOTEL banner will expose): direct branch */
+	br	x0
+
 /* PSCI CPU_ON target. x0 = context id = cpu index (1..7). */
 	.globl secondary_entry
 secondary_entry:

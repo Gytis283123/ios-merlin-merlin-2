@@ -74,8 +74,6 @@ static int magic_ok(const char *m)
 	return 1;
 }
 
-typedef void (*xnu_entry_t)(uint64_t boot_args_pa);
-
 const char *loader_boot(uintptr_t dtb)
 {
 	uint64_t rd_start, rd_end;
@@ -138,10 +136,13 @@ const char *loader_boot(uintptr_t dtb)
 
 	uintptr_t entry_pa = p->entry_va + pa_of_va_base;
 	con_hex("JUMP", entry_pa);
+	uint64_t cur_el;
+	__asm__ volatile("mrs %0, CurrentEL" : "=r"(cur_el));
+	con_hex2("BOOTEL", "el=", (uint32_t)(cur_el >> 2), "entry=", (uint32_t)entry_pa);
 	con_str("XNU", "jumping (fbcon clears screen)");
 
 	/* Everything was written with the MMU and caches off; drop any stale I-cache lines too. */
 	__asm__ volatile("dsb sy; ic iallu; dsb sy; isb" ::: "memory");
-	((xnu_entry_t)entry_pa)(ba_pa);
+	enter_xnu(entry_pa, ba_pa);
 	return "xnu returned";
 }
