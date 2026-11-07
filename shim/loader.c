@@ -176,19 +176,28 @@ const char *loader_boot(uintptr_t dtb)
 		((void (*)(uint64_t))scratch)(0);
 		con_hex2("EXR", "ok at=", (uint32_t)scratch, "n=", (uint32_t)n);
 
-		/* Probe 3: full paint stub from the band into the probe row. */
+		/* Probe 3: paint stub from the band - 64 cyan words ONLY at the
+		 * probe row (a 1 MB paint from row ~2000 crosses the RAM top at
+		 * 0x7e605000 and data-aborts; that was the v37/v39 "wall"). */
 		extern const unsigned char exec_test_stub[], exec_test_stub_end[];
 		n = (uint64_t)(exec_test_stub_end - exec_test_stub);
 		copy64(scratch, (uintptr_t)exec_test_stub, n);
 		__asm__ volatile("dc cvau, %0; ic ivau, %0; dsb sy; isb"
 				 :: "r"(scratch) : "memory");
+		con_hex2("CP1", "copied=", (uint32_t)n, "at=", (uint32_t)scratch);
 		stage = "loader-exp";
-		((void (*)(uint64_t))scratch)((uint64_t)(uintptr_t)prow);
+		((void (*)(uint64_t, uint64_t))scratch)((uint64_t)(uintptr_t)prow, 64);
+		con_hex2("CP2", "exp", 0, "ok", 1);
 		con_hex2("EXP", "ok at=", (uint32_t)scratch, "n=", (uint32_t)n);
 
 		stage = "loader-ic";
+		con_hex2("CP3", "pre-jump", 1, "el=", (uint32_t)(cur_el >> 2));
 	}
 	con_str("XNU", "jumping (fbcon clears screen)");
+	{
+		extern const char *stage;
+		stage = "loader-jump";
+	}
 
 	/* Everything was written with the MMU and caches off; drop any stale I-cache lines too. */
 	__asm__ volatile("dsb sy; ic iallu; dsb sy; isb" ::: "memory");

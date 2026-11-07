@@ -170,20 +170,16 @@ exec_ret_stub:
 	.globl exec_ret_stub_end
 exec_ret_stub_end:
 
-/* SWEET exec-band probe (v37): paint CYAN at x0 (a low framebuffer row the
- * console never uses) and return. Position-independent by construction
- * (relative branches only, no adrp): the loader copies these bytes into the
- * KERNEL memory band and blr's there. If the cyan block shows, the band is
- * executable in the ATF/LK state we hand to XNU; if not, XNU could never
- * have started regardless of CPU state. <64 bytes so one dcvau/icivau line
- * covers the copy. */
+/* SWEET exec-band probe: paint x1 cyan words at x0 and return. The caller
+ * keeps the count small (64 words = one dash at the probe row): a bigger
+ * paint from row ~2000 would run past the end of DRAM (RAM top 0x7e605000)
+ * and data-abort - which is exactly what the v37/v39 probes did. */
 	.globl exec_test_stub
 exec_test_stub:
 	mov	w5, #0xffff
 	movk	w5, #0xff00, lsl #16	/* cyan 0xff00ffff */
-	mov	x6, #0x40000
 1:	str	w5, [x0], #4
-	subs	x6, x6, #1
+	subs	x1, x1, #1
 	b.ne	1b
 	ret
 	.globl exec_test_stub_end
