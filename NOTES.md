@@ -478,7 +478,38 @@ user's photos:
   exact instruction; if it panics with STAGE=loader-jump, the fault is
   in the kernel and ELR/FAR/SPSR (now printed) identify it precisely.
 
+### v40 RESULT + capstone identification: the dc cvau/ic ivau trap (2026-11-07 night 6)
+
+- v40 photo: STRT ok, EXR ok, PANIC at STAGE loader-exr BEFORE CP1 -
+  same window as v39 (EXR print -> copy64 -> dcvau/icivau -> CP1).
+- Disassembled the shim binary locally (capstone): ELR2=0x40081AC8 is
+  the ldr of the INLINED second copy64; X1 = n+7 in BOTH v39 (0x23 =
+  28+7) and v40 (0x1F = 24+7) = the copy64 rounding numerator; FAR2 =
+  the stub's own source bytes (0x400821BC / 0x4008213C).
+- **Conclusion: dc cvau / ic ivau BY VA WITH THE MMU OFF is
+  architecturally UNDEFINED and traps on this CPU.** It is the common
+  factor of every death since v37 (silent in v37 - VBAR_EL2 was 0;
+  a blue PANIC in v38+ thanks to set_vbars). The fault surfaces in the
+  copy loop AFTER the first cache-op pair (the first pair for the ret
+  stub survived twice - marginal/implementation detail, irrelevant now).
+- **Shim v41 (CI 42408871481, `out/shim-boot-merlin-v41-jump.img`
+  SHA256 112fe358…fd99)**: per-VA cache ops REMOVED everywhere before
+  the jump (with the MMU off, copied bytes are uncached; a global
+  `ic iallu` provides I-coherency - the MMU-off-safe form); EXP paint
+  probe dropped (EXR already proved the band executes); exec_ret_stub
+  .balign 8. Flow now: BOOTEL -> vbars -> ENTW -> STRT -> EXR -> CP3
+  -> ic iallu -> enter_xnu (EL2->EL1 drop) -> XNU.
+- THE REAL JUMP HAS STILL NEVER EXECUTED (v37/v39/v40 died inside the
+  probe; v36's kernel had no ladder due to the CI skip). v41 is the
+  first full clean shot: expect the 0083 ladder (BLUE at _start, GREEN
+  after boot-args handoff, YELLOW before MMU enable - all painted with
+  fb_base+1MB = 0x7DA9B000, safely inside RAM) or kernel kprintf text.
+- If a panic appears with STAGE=loader-jump: the kernel faulted; ESR/
+  ELR/FAR/SPSR (EL-aware) identify it - extend the kernel ladder past
+  MMU enable next.
+
 ### DISPLAY SOLVED (2026-11-07 evening, v6-v33, user-confirmed full panel)
+
 
 
 
