@@ -145,8 +145,13 @@ void merlin_main(uint64_t dtb)
 	uint32_t osize = rd32(MERLIN_OVL_L0_SRC_SIZE);
 	uint32_t opitch = rd32(MERLIN_OVL_L0_PITCH);
 	uint32_t w = osize & 0xffff, h = osize >> 16;
-	if (pitch < 64 || pitch > 16384 || (pitch & 3))
-		pitch = MERLIN_FB_STRIDE;
+	/* MEM_SRC_PITCH is in PIXELS (v14 evidence: register=1080 used as bytes
+	 * shredded the text 4x wide). Convert to bytes for 32bpp; a value that
+	 * already looks like bytes (>=2048) passes through. */
+	if (pitch < 64 || pitch > 4096)
+		pitch = MERLIN_FB_W;
+	if (pitch < 2048)
+		pitch *= 4;
 	if (!w || w > 4096 || !h || h > 8192) {
 		w = MERLIN_FB_W;
 		h = MERLIN_FB_H;
