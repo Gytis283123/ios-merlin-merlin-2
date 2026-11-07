@@ -139,6 +139,30 @@ const char *loader_boot(uintptr_t dtb)
 	uint64_t cur_el;
 	__asm__ volatile("mrs %0, CurrentEL" : "=r"(cur_el));
 	con_hex2("BOOTEL", "el=", (uint32_t)(cur_el >> 2), "entry=", (uint32_t)entry_pa);
+
+	/* Probe 1: the first kernel instruction words, to verify the copy
+	 * (expected d503201f NOPs from the kernel Mach-O at the entry). */
+	{
+		volatile const uint32_t *ep = (volatile const uint32_t *)entry_pa;
+		con_hex2("ENTW", "w0=", ep[0], "w1=", ep[1]);
+		con_hex2("ENTW", "w2=", ep[2], "w3=", ep[3]);
+	}
+
+	/* Probe 2: is the kernel memory band EXECUTABLE in this ATF/LK state?
+	 * Copy a tiny cyan-paint stub into the unused gap below __TEXT and run
+	 * it there. A fault here means XNU could never start from that band
+	 * regardless of CPU state; success paints cyan at the panel bottom. */
+	{
+		extern const unsigned char exec_test_stub[], exec_test_stub_end[];
+		uint64_t n = (uint64_t)(exec_test_stub_end - exec_test_stub);
+		uintptr_t scratch = (p->phys_base + 0x1000 + 63) & ~(uintptr_t)63;
+		copy64(scratch, (uintptr_t)exec_test_stub, n);
+		__asm__ volatile("dc cvau, %0; ic ivau, %0; dsb sy; isb"
+				 :: "r"(scratch) : "memory");
+		((void (*)(uint64_t))scratch)((uint64_t)(uintptr_t)con_fb
+					      + 2000UL * con_stride);
+		con_hex2("EXECT", "ok at=", (uint32_t)scratch, "n=", (uint32_t)n);
+	}
 	con_str("XNU", "jumping (fbcon clears screen)");
 
 	/* Everything was written with the MMU and caches off; drop any stale I-cache lines too. */

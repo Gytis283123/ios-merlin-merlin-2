@@ -150,6 +150,25 @@ enter_xnu:
 1:	/* EL1 (or EL3, which the BOOTEL banner will expose): direct branch */
 	br	x0
 
+/* SWEET exec-band probe (v37): paint CYAN at x0 (a low framebuffer row the
+ * console never uses) and return. Position-independent by construction
+ * (relative branches only, no adrp): the loader copies these bytes into the
+ * KERNEL memory band and blr's there. If the cyan block shows, the band is
+ * executable in the ATF/LK state we hand to XNU; if not, XNU could never
+ * have started regardless of CPU state. <64 bytes so one dcvau/icivau line
+ * covers the copy. */
+	.globl exec_test_stub
+exec_test_stub:
+	mov	w5, #0xffff
+	movk	w5, #0xff00, lsl #16	/* cyan 0xff00ffff */
+	mov	x6, #0x40000
+1:	str	w5, [x0], #4
+	subs	x6, x6, #1
+	b.ne	1b
+	ret
+	.globl exec_test_stub_end
+exec_test_stub_end:
+
 /* PSCI CPU_ON target. x0 = context id = cpu index (1..7). */
 	.globl secondary_entry
 secondary_entry:
