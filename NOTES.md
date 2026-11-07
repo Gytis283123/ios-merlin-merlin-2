@@ -580,6 +580,25 @@ user's photos:
   cursor): the last `SWEET STARTUP:` line names the hook that never
   returned.
 
+### v43 REGRESSION + REVERT (2026-11-07 night 9, user call)
+
+- v43 (kernel 0084 + startup trace) REGRESSED: the boot died between the
+  ladder's GREEN paint (start_first_cpu) and the first kernel console
+  output - well before where v42 (kernel 0083, identical shim) sailed
+  through to "VM bootstrap done". Only change: the 0084 startup-trace
+  printfs (binary layout shift). User called it: revert.
+- **Reverted (commit ac6fdaa "Revert xnu 0084...").** xnu/patches is
+  back to 0001-0083. CI 42414140948 green.
+- **Flash test: `out/shim-boot-merlin-v44-restore.img`** SHA256
+  381de908...7d6d (kernel 7a614a68... - the 0083 source rebuilt; the
+  binary is not byte-identical to ff23caad but is built from the same
+  patches; shim 288cf8b1... unchanged). Expected: back to the v42 deep
+  boot ending at "VM bootstrap done".
+- LESSON: treat kernel-side layout-affecting instrumentation as risky on
+  this port; any future trace must be minimal (subsystem-transition
+  marks only, ~8 lines, own commit, built only after the restore is
+  confirmed) and dropped at the first regression.
+
 ### DISPLAY SOLVED (2026-11-07 evening, v6-v33, user-confirmed full panel)
 
 
