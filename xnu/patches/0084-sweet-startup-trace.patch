@@ -1,0 +1,30 @@
+--- a/osfmk/kern/startup.c
++++ b/osfmk/kern/startup.c
+@@ -405,6 +405,17 @@ kernel_startup_initialize_upto(startup_subsystem_id_t upto)
+ 			kprintf("%s[%d, rank %d]: %p(%p)\n", __func__,
+ 			    cur->subsystem, cur->rank, cur->func, cur->arg);
+ 		}
++#if SWEET
++		/* patch 0084: name every startup hook - the merlin boot went
++		 * silent inside this chain (last console output: "VM bootstrap
++		 * done", a STARTUP_SUB_ZALLOC hook). func addresses
++		 * symbolicate against the link image. printf is safe here:
++		 * the early fbcon console is already up. */
++		if (cur->subsystem >= STARTUP_SUB_LOCKS) {
++			printf("SWEET STARTUP: [%d r%d] %p\n",
++			    cur->subsystem, cur->rank, cur->func);
++		}
++#endif
+ 		startup_phase = cur->subsystem - 1;
+ 		kernel_startup_log(cur->subsystem);
+ 		cur->func(cur->arg);
+@@ -412,6 +423,9 @@ kernel_startup_initialize_upto(startup_subsystem_id_t upto)
+ 	}
+ 	kernel_startup_log(upto);
+ 
++#if SWEET
++	printf("SWEET STARTUP: reached phase %d\n", upto);
++#endif
+ 	if ((startup_debug & STARTUP_DEBUG_VERBOSE) &&
+ 	    upto >= STARTUP_SUB_KPRINTF) {
+ 		kprintf("%s: reached phase %d\n", __func__, upto);
