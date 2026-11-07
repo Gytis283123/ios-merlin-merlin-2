@@ -165,30 +165,19 @@ const char *loader_boot(uintptr_t dtb)
 		con_hex2("STRT", "ok at=", (uint32_t)(uintptr_t)prow, "el=", (uint32_t)(cur_el >> 2));
 
 		/* Probe 2: copy a bare `ret` into the kernel band and blr there —
-		 * pure instruction-fetch test, no stores. */
+		 * pure instruction-fetch test, no stores. NOTE: no dc cvau/ic ivau
+		 * here - by-VA cache maintenance with the MMU off is UNDEFINED and
+		 * trapped on this CPU (the v37/v39/v40 wall, silent in v37). With
+		 * the MMU off, copied bytes are uncached; a global ic iallu gives
+		 * I-coherency. */
 		extern const unsigned char exec_ret_stub[], exec_ret_stub_end[];
 		uint64_t n = (uint64_t)(exec_ret_stub_end - exec_ret_stub);
 		uintptr_t scratch = (p->phys_base + 0x1000 + 63) & ~(uintptr_t)63;
 		copy64(scratch, (uintptr_t)exec_ret_stub, n);
-		__asm__ volatile("dc cvau, %0; ic ivau, %0; dsb sy; isb"
-				 :: "r"(scratch) : "memory");
+		__asm__ volatile("ic iallu; dsb sy; isb" ::: "memory");
 		stage = "loader-exr";
 		((void (*)(uint64_t))scratch)(0);
 		con_hex2("EXR", "ok at=", (uint32_t)scratch, "n=", (uint32_t)n);
-
-		/* Probe 3: paint stub from the band - 64 cyan words ONLY at the
-		 * probe row (a 1 MB paint from row ~2000 crosses the RAM top at
-		 * 0x7e605000 and data-aborts; that was the v37/v39 "wall"). */
-		extern const unsigned char exec_test_stub[], exec_test_stub_end[];
-		n = (uint64_t)(exec_test_stub_end - exec_test_stub);
-		copy64(scratch, (uintptr_t)exec_test_stub, n);
-		__asm__ volatile("dc cvau, %0; ic ivau, %0; dsb sy; isb"
-				 :: "r"(scratch) : "memory");
-		con_hex2("CP1", "copied=", (uint32_t)n, "at=", (uint32_t)scratch);
-		stage = "loader-exp";
-		((void (*)(uint64_t, uint64_t))scratch)((uint64_t)(uintptr_t)prow, 64);
-		con_hex2("CP2", "exp", 0, "ok", 1);
-		con_hex2("EXP", "ok at=", (uint32_t)scratch, "n=", (uint32_t)n);
 
 		stage = "loader-ic";
 		con_hex2("CP3", "pre-jump", 1, "el=", (uint32_t)(cur_el >> 2));

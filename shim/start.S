@@ -163,7 +163,9 @@ set_vbars:
 
 /* Pure fetch test: does the kernel band execute at all? Copied into the
  * band by the loader and blr'd; if this returns, instruction fetch from
- * the band works. 4 bytes, one dcvau/icivau line. */
+ * the band works. 4 bytes; balign 8 so the loader's 8-byte copy of it
+ * (one chunk, read slightly past the end into .text) stays aligned. */
+	.balign 8
 	.globl exec_ret_stub
 exec_ret_stub:
 	ret
