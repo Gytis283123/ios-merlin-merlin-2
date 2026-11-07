@@ -226,3 +226,34 @@ LIVE fb base — compare against the ADT's 0x7e605000 constant afterwards.
   round-trip verified) + raw payload + stock DTB. Flash test pending.
 - v17 probe images: raw kernel slots — their README "6 colors" table was a
   decision tree, NOT a recorded success; every v9-v17 probe bootlooped too.
+
+### MILESTONE 2026-11-07: THE FRESH BOOT CHAIN EXECUTES ON THE PHONE (v6 + vbmeta flags)
+
+- **Root cause of all bootloops, final: TWO independent locks.**
+  1. vbmeta: after the stock-firmware reflash, Xiaomi's disable flag bits
+     were reset. The October kit's `patch-vbmeta.py` (user-provided) writes
+     0x03 to byte offset 123 = AVB flags bits 24/25 — **Xiaomi's LK honors
+     those bits**, not the standard AVB bits 0/1. Re-applying it fixed the
+     boot rejection. (Explains why a previously-working image bootlooped
+     after the reflash.)
+  2. The kernel slot must be gzipped (stock Image.gz and all booted shims
+     are gzip; raw slots were rejected — see previous section).
+- **v6 = stock-header clone + gzip(shim) + raw payload + stock DTB** booted
+  once vbmeta was re-patched. Photo evidence (user): the RED MERLIN banner
+  on the panel with the full diagnostic readout:
+  DTB 0x4BC80000 magic valid; FB 0x7E605000; MPIDR 0x81000000 (Aff=0, MT
+  bit set, RES1 — matches ADT cpu0 reg 0x000); CNTFRQ 0x00C65D40 = 13 MHz
+  exact; initrd props ABSENT from LK's DTB — the shim's 0x47c80000 fallback
+  located the payload; hi-lo = 16,609,776 = payload size exact; 10 segments
+  copied to 0x50000000 (end 0x524C8000); boot_args at 0x524CC000; JUMP to
+  0x51490488 executed. Phone frozen (watchdog off) — no loop.
+- **Remaining walls:**
+  1. Kernel entry: jumped, zero console output — died/hung before the
+     early-framebuffer hook. Prime suspect: the LK "K64"/ATF SMC handoff
+     delivers EL1 in a different CPU state (MMU/caches) than the Qualcomm
+     ABL path the kernel was hardened for. Fresh patch 0082 territory.
+  2. Display shear: text renders sheared — LK fb stride is likely
+     1088*4=4352, not 1080*4=4320 (MTK 64-byte pitch alignment). One shim
+     constant; also check vramSize-based double buffering.
+- The UEFI side quest (edk2-mt6765-uefi repo) is moot for now — the boot
+  chain works; parked.
