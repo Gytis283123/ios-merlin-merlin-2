@@ -65,6 +65,10 @@ static uint64_t merlin_fb_base(uintptr_t fdt)
 #define MERLIN_RDMA_SRC_PITCH	(MERLIN_RDMA0_BASE + 0x02c)
 #define MERLIN_OVL_L0_SRC_SIZE	(MERLIN_OVL0_BASE + 0x038)
 #define MERLIN_OVL_L0_PITCH	(MERLIN_OVL0_BASE + 0x044)
+#define MERLIN_OVL_L0_CON	(MERLIN_OVL0_BASE + 0x030)
+#define MERLIN_OVL_L1_CON	(MERLIN_OVL0_BASE + 0x050)
+#define MERLIN_OVL_L2_CON	(MERLIN_OVL0_BASE + 0x070)
+#define MERLIN_OVL_L3_CON	(MERLIN_OVL0_BASE + 0x090)
 
 static int addr_plausible(uint32_t a)
 {
@@ -132,40 +136,29 @@ void merlin_main(uint64_t dtb)
 	 * screen (no reboot), which is the observable. */
 	merlin_wdt_stop();
 
-	/* Display geometry, all from the hardware + vram arithmetic:
-	 * - L0/L1: the OVL layer addresses the panel's two segments fetch
-	 *   (registers 0x1400bf40/0x1400bf60; LK left them pointing at the
-	 *   live scan buffers)
-	 * - pitch 1088 px: the vram = 4 layers x 1088 x 1440 x 4B =
-	 *   0x17E8000 exactly (1080 content + 8px 64-byte alignment)
-	 * - split row 1440: L0 holds the top 1440 rows, L1 the bottom 900
-	 * - w/h: OVL L0 src size (1080x2340 expected) with fallbacks */
-	uint32_t l0 = rd32(MERLIN_OVL_L0_ADDR);
-	uint32_t l1reg = rd32(MERLIN_OVL_L1_ADDR);
-	uint32_t osize = rd32(MERLIN_OVL_L0_SRC_SIZE);
-	uint32_t w = osize & 0xffff, h = osize >> 16;
-	uint32_t rdma_val = 0, ovl_val = 0;
-	(void)merlin_scan_base(dtb, &rdma_val, &ovl_val);
-	uint64_t atag_fb = merlin_fb_base(dtb);
-	if (!addr_plausible(l0))
-		l0 = atag_fb;
-	/* The bottom rows display the LOGO buffer (v19 photo: LK's Redmi logo
-	 * visible there) = the atag videolfb address. The OVL L1 register
-	 * value is printed for the record. */
-	uint32_t l1 = (uint32_t)atag_fb;
-	(void)l1reg;
-	if (!w || w > 4096)
-		w = MERLIN_FB_W;
-	if (!h || h > 8192)
-		h = MERLIN_FB_H;
+	/* Kill the OVL foreground layers: LK leaves a 720x1440 logo layer
+	 * enabled ON TOP of the RDMA background (v20 drew the console into
+	 * it and it rendered as a small ~200x160 window). Layer enable =
+	 * bit 0 of each Lx_CON. */
+	wr32(MERLIN_OVL_L0_CON, rd32(MERLIN_OVL_L0_CON) & ~1UL);
+	wr32(MERLIN_OVL_L1_CON, rd32(MERLIN_OVL_L1_CON) & ~1UL);
+	wr32(MERLIN_OVL_L2_CON, rd32(MERLIN_OVL_L2_CON) & ~1UL);
+	wr32(MERLIN_OVL_L3_CON, rd32(MERLIN_OVL_L3_CON) & ~1UL);
 
-	con_init2(l0, l1, w, h, 1088, 1440);
+	/* The full-screen console = the RDMA background buffer (v13 proved
+	 * its placement). The RDMA pitch register is in PIXELS (v14: the
+	 * register read 1080) - set it to match our 1080-wide buffer, which
+	 * we draw at 4320 bytes per line. */
+	uint32_t rdma_val = rd32(MERLIN_RDMA_MEM_START);
+	uint32_t scan = addr_plausible(rdma_val) ? rdma_val
+						 : (uint32_t)MERLIN_FB_FALLBACK;
+	wr32(MERLIN_RDMA_SRC_PITCH, MERLIN_FB_W);
+
+	con_init(scan, MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
 	con_clear(RED);
 	con_str("MERLIN", "shim up (toprgu stopped)");
-	con_hex2("SCAN", "rdma=", rdma_val, "ovl=", ovl_val);
-	con_hex2("OVL", "l0=", l0, "l1r=", l1reg);
-	con_hex2("BUF", "l1=", l1, "atag=", (uint32_t)atag_fb);
-	con_hex2("GEOM", "w=", w, "h=", h);
+	con_hex2("SCAN", "rdma=", rdma_val, "con0=",
+		 rd32(MERLIN_OVL_L0_CON));
 	con_hex2("DTB", "at=", (uint32_t)dtb, "magic=", dtb ? *(volatile uint32_t *)dtb : 0);
 	con_hex2("FB", "at=", (uint32_t)merlin_fb_base(dtb), "geom=",
 		 (MERLIN_FB_W << 16) | MERLIN_FB_H);
