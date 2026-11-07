@@ -60,13 +60,31 @@ static uint64_t merlin_ramdisk(uintptr_t fdt)
 
 void merlin_main(uint64_t dtb)
 {
-	merlin_wdt_stop();
-	con_init(merlin_fb_base(dtb), MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
-	con_clear(RED);
+	/* Color ladder for bootloop postmortems: the LAST color on screen
+	 * while the box resets marks the stage that died (film one loop
+	 * cycle and read it off; the color persists during the watchdog
+	 * fuse, no delays needed).
+	 *   MAGENTA - C entry reached, painting the dts-default framebuffer
+	 *             (no DTB touched yet, nothing before it can fault on a
+	 *             bad pointer)
+	 *   GREEN   - toprgu watchdog stop written
+	 *   YELLOW  - LK DTB parsed, painting the live framebuffer address
+	 *   RED     - full banner, payload loading
+	 */
+	con_init(MERLIN_FB_FALLBACK, MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
+	con_clear(MAGENTA);
 
+	merlin_wdt_stop();
+	con_clear(GREEN);
+
+	uint64_t fb = merlin_fb_base(dtb);
+	con_init(fb, MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
+	con_clear(YELLOW);
+
+	con_clear(RED);
 	con_str("MERLIN", "shim up (toprgu stopped)");
 	con_hex2("DTB", "at=", (uint32_t)dtb, "magic=", dtb ? *(volatile uint32_t *)dtb : 0);
-	con_hex2("FB", "at=", (uint32_t)merlin_fb_base(dtb), "geom=",
+	con_hex2("FB", "at=", (uint32_t)fb, "geom=",
 		 (MERLIN_FB_W << 16) | MERLIN_FB_H);
 	con_hex2("MPIDR", "val=", (uint32_t)mpidr(), "frq=", (uint32_t)cntfrq());
 	con_hex2("RD", "fb=", (uint32_t)merlin_ramdisk(dtb), "initrd=", 0);
