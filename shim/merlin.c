@@ -197,21 +197,10 @@ void merlin_main(uint64_t dtb)
 	 * screen (no reboot), which is the observable. */
 	merlin_wdt_stop();
 
-	/* Kill the OVL foreground layers: LK leaves a 720x1440 logo layer
-	 * enabled ON TOP of the RDMA background (v20 drew the console into
-	 * it and it rendered as a small ~200x160 window). Layer enable =
-	 * bit 0 of each Lx_CON. */
-	wr32(MERLIN_OVL_L0_CON, rd32(MERLIN_OVL_L0_CON) & ~1UL);
-	wr32(MERLIN_OVL_L1_CON, rd32(MERLIN_OVL_L1_CON) & ~1UL);
-	wr32(MERLIN_OVL_L2_CON, rd32(MERLIN_OVL_L2_CON) & ~1UL);
-	wr32(MERLIN_OVL_L3_CON, rd32(MERLIN_OVL_L3_CON) & ~1UL);
-
 	/* The full-screen console = the RDMA background buffer (v13 proved
-	 * its placement). The RDMA pitch register is in PIXELS (v14: the
-	 * register read 1080) - set it to match our 1080-wide buffer, which
-	 * we draw at 4320 bytes per line. */
+	 * its placement and full-red fill at pitch 4320). MEM_SRC_PITCH and
+	 * the OVL layer registers stay exactly as LK left them. */
 	uint32_t rdma_val = rd32(MERLIN_RDMA_MEM_START);
-	uint32_t con0_before = rd32(MERLIN_OVL_L0_CON);
 	uint32_t scan = addr_plausible(rdma_val) ? rdma_val
 						 : (uint32_t)MERLIN_FB_FALLBACK;
 	parse_display_args(merlin_ramdisk(dtb));
@@ -228,7 +217,6 @@ void merlin_main(uint64_t dtb)
 	con_hex2("CFGP", "p=", cfg_p, "s=", cfg_s);
 	con_hex2("CFGB", "b=", cfg_base, "scan=", scan);
 	con_hex2("SCAN", "rdma=", rdma_val, "pitch=", cfg_p);
-	con_hex2("OVC", "c0b=", con0_before, "c0a=",
 		 rd32(MERLIN_OVL_L0_CON));
 	con_hex2("DTB", "at=", (uint32_t)dtb, "magic=", dtb ? *(volatile uint32_t *)dtb : 0);
 	con_hex2("FB", "at=", (uint32_t)merlin_fb_base(dtb), "geom=",
