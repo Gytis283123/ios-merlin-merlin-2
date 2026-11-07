@@ -556,6 +556,30 @@ user's photos:
   M1a proof), then M2 = MSDC eMMC block driver (rd=msdcroot0) to mount
   the iOS 16 root from userdata, M3 = SMP via PSCI, M4+ display/touch.
 
+### v43: kernel startup-hook trace (0084) - bisecting the post-bootstrap silence (2026-11-07 night 8)
+
+- v42 result (user photo): Darwin runs DEEP into boot - scheduler,
+  OSLog firehose, telemetry, KDP ("iBoot version: merlin-shim" - the
+  kernel reads our shim identity!), SWEET platform expert, AppleKeyStore
+  (no passcode, unlocked), IOWatchdog, IOCoreSurfaceRoot, HID
+  buttons+touch, static battery, then the VM zone maps, ending at
+  **"VM bootstrap done: 85 maps, 165 entries and 591 holes left"**
+  (vm_kernel_boostraped, STARTUP_SUB_ZALLOC) with the red cursor line
+  below it. No panic printed. The console wraps (45 visible rows, top
+  row cut mid-line), so the exact dying hook is not identifiable from
+  the photo alone.
+- **Patch 0084 (CI 42412559363, applied, guard passed):** every STARTUP
+  hook from STARTUP_SUB_LOCKS up now prints
+  `SWEET STARTUP: [subsys rank] func` (printf - the fbcon early console
+  is proven up at this point), plus `SWEET STARTUP: reached phase N` at
+  every kernel_startup_initialize_upto exit. func addresses symbolicate
+  against artifacts/kernel-0084/kernel.development.sweet.link.
+- **Flash test: `out/shim-boot-merlin-v43-trace.img`** SHA256
+  7f8f329e...2e18 (kernel 0084 62490e13..., shim v42 288cf8b1...
+  unchanged). Photo the screen END (the last lines above the red
+  cursor): the last `SWEET STARTUP:` line names the hook that never
+  returned.
+
 ### DISPLAY SOLVED (2026-11-07 evening, v6-v33, user-confirmed full panel)
 
 
