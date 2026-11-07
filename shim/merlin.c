@@ -130,6 +130,67 @@ static int mem_cb(const struct fdt_mem_ent *e, void *ctx)
 }
 
 
+/* Runtime display knobs from the payload cmdline (set via the packer):
+ *   merlinfb_w=<px>  merlinfb_h=<px>  merlinfb_p=<bytes/line>
+ *   merlinfb_b=<hex base>  merlinfb_s=<font scale>
+ * Defaults: 1080x2340, pitch 4320, base = the RDMA register, scale 2. */
+static uint32_t cfg_w = 1080, cfg_h = 2340, cfg_p = 4320, cfg_s = 2;
+static uint32_t cfg_base;
+
+static uint32_t cl_val(const char *cl, const char *key)
+{
+	const char *p = cl;
+	while (*p) {
+		const char *k = key;
+		while (*k && *p == *k) { p++; k++; }
+		if (!*k && *p == '=') {
+			p++;
+			uint32_t v = 0;
+			if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) {
+				p += 2;
+				for (;;) {
+					char c = *p;
+					int d = (c >= '0' && c <= '9') ? c - '0'
+					      : (c >= 'a' && c <= 'f') ? c - 'a' + 10
+					      : (c >= 'A' && c <= 'F') ? c - 'A' + 10 : -1;
+					if (d < 0)
+						break;
+					v = v * 16 + d;
+					p++;
+				}
+			} else {
+				while (*p >= '0' && *p <= '9') {
+					v = v * 10 + (*p - '0');
+					p++;
+				}
+			}
+			return v;
+		}
+		while (*p && *p != ' ')
+			p++;
+		while (*p == ' ')
+			p++;
+	}
+	return 0;
+}
+
+static void parse_display_args(uintptr_t rd)
+{
+	/* payload header: magic(8) ver(4) nsegs(4) ... cmdline at +0x48 */
+	const char *cl = (const char *)rd + 0x48;
+	uint32_t v;
+	if ((v = cl_val(cl, "merlinfb_w")))
+		cfg_w = v;
+	if ((v = cl_val(cl, "merlinfb_h")))
+		cfg_h = v;
+	if ((v = cl_val(cl, "merlinfb_p")))
+		cfg_p = v;
+	if ((v = cl_val(cl, "merlinfb_s")))
+		cfg_s = v;
+	if ((v = cl_val(cl, "merlinfb_b")))
+		cfg_base = v;
+}
+
 void merlin_main(uint64_t dtb)
 {
 	/* Kill the watchdog fuse FIRST: from here on any death is a frozen
@@ -152,11 +213,18 @@ void merlin_main(uint64_t dtb)
 	uint32_t rdma_val = rd32(MERLIN_RDMA_MEM_START);
 	uint32_t scan = addr_plausible(rdma_val) ? rdma_val
 						 : (uint32_t)MERLIN_FB_FALLBACK;
-	wr32(MERLIN_RDMA_SRC_PITCH, MERLIN_FB_W);
+	parse_display_args(merlin_ramdisk(dtb));
+	if (!cfg_base)
+		cfg_base = scan;
+	wr32(MERLIN_RDMA_SRC_PITCH, cfg_w);
 
-	con_init(scan, MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
+	con_scale = cfg_s;
+	con_init(cfg_base, cfg_w, cfg_h, cfg_p);
 	con_clear(RED);
 	con_str("MERLIN", "shim up (toprgu stopped)");
+	con_hex2("CFG", "w=", cfg_w, "h=", cfg_h);
+	con_hex2("CFGP", "p=", cfg_p, "s=", cfg_s);
+	con_hex2("CFGB", "b=", cfg_base, "scan=", scan);
 	con_hex2("SCAN", "rdma=", rdma_val, "con0=",
 		 rd32(MERLIN_OVL_L0_CON));
 	con_hex2("DTB", "at=", (uint32_t)dtb, "magic=", dtb ? *(volatile uint32_t *)dtb : 0);

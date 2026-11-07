@@ -5,14 +5,13 @@
 #include "console.h"
 #include "font.h"
 
-#define SCALE		3
-#define CH_W		(8 * SCALE)
-#define CH_H		(16 * SCALE)
+
 #define MARGIN		24
 #define LABEL_COLS	8
 
 volatile uint32_t *con_fb = (volatile uint32_t *)FB_BASE;
 uint32_t con_w = FB_W, con_h = FB_H, con_stride = FB_STRIDE;
+uint32_t con_scale = 3;
 volatile uint32_t *con_l1 = 0;
 uint32_t con_split = 0xFFFFFFFF;
 static uint32_t con_bg;
@@ -58,8 +57,9 @@ static void put_char(int col, char ch, uint32_t fg)
 	if (ch < 0x20 || ch > 0x7e)
 		ch = '?';
 	const unsigned char *g = font8x16[ch - 0x20];
-	int x0 = MARGIN + col * CH_W, y0 = MARGIN + row * CH_H;
-	if (x0 + CH_W > (int)con_w || y0 + CH_H > (int)con_h)
+	int ch_w = 8 * con_scale, ch_h = 16 * con_scale;
+	int x0 = MARGIN + col * ch_w, y0 = MARGIN + row * ch_h;
+	if (x0 + ch_w > (int)con_w || y0 + ch_h > (int)con_h)
 		return;
 	for (int gy = 0; gy < 16; gy++)
 		for (int gx = 0; gx < 8; gx++) {

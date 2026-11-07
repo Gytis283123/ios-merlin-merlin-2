@@ -19,6 +19,7 @@ extern volatile uint32_t *con_fb;
  * registers). MTK splits tall panels across OVL layers: rows below
  * con_split draw from con_l1 (a separate buffer), pitch in PIXELS. */
 extern uint32_t con_w, con_h, con_stride;
+extern uint32_t con_scale;
 extern volatile uint32_t *con_l1;
 extern uint32_t con_split;
 void con_init(uint64_t base, uint32_t w, uint32_t h, uint32_t stride_px);
