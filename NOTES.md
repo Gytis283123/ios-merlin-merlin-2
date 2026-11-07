@@ -451,7 +451,35 @@ user's photos:
   fault is in the kernel after the drop -> we debug XNU early init with
   a kernel-side ladder AFTER MMU enable (checkpoints in common_start).
 
+### v39 RESULT: BAND IS EXECUTABLE; the "wall" was the probe's own runaway paint (2026-11-07 night 5)
+
+- v39 photo, fully decoded:
+  - `STRT ok at=7E232200` (store + display fine), **`EXR ok at=50001000`**
+    — the bare ret stub EXECUTED in the kernel band and returned. The
+    band is executable in the ATF/LK state; firewall/XN theory dead.
+  - `PANIC SYNC`, STAGE=loader-exr, esr=96000021 = **data abort, current
+    EL (SPSR2 M=EL2h confirms), IFSC 0x21 L1 translation fault**,
+    FAR2=0x400821BC ELR2=0x40081AC8 X30=0x40083050 (shim addresses).
+  - ROOT CAUSE of the probe panics: the EXP (v37 EXECT) probe painted
+    0x40000 words = **1 MB from row ~2000 = 0x7E232200+1 MB, which
+    crosses the RAM top at 0x7e605000** — a store past the end of DRAM
+    aborts. In v37 (VBAR_EL2=0) the same abort was the silent death.
+- IMPORTANT consequence: the panic pre-empted the jump in v37/v39 — the
+  REAL kernel jump (with the EL drop + 0083 ladder) has not actually
+  been tested since v36 (whose kernel, CI-skip discovery, contained NO
+  ladder at all). The 0083 kernel ladder itself paints fb_base+1 MB =
+  0x7DA9B000, INSIDE RAM — safe.
+- **Shim v40 (CI 42407986018, `out/shim-boot-merlin-v40-jump.img`
+  SHA256 3604f0eb…8e73)**: paint stub takes a word count (64 words =
+  one cyan dash), CP1/CP2/CP3 checkpoints, stage `loader-jump` before
+  the real enter_xnu. All probe evidence now points to the jump working;
+  expect BLUE/GREEN/YELLOW ladder or kernel text on the next flash.
+- If the next flash still panics pre-jump: the CP lines + stage name the
+  exact instruction; if it panics with STAGE=loader-jump, the fault is
+  in the kernel and ELR/FAR/SPSR (now printed) identify it precisely.
+
 ### DISPLAY SOLVED (2026-11-07 evening, v6-v33, user-confirmed full panel)
+
 
 
 
