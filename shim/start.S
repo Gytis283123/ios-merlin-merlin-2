@@ -34,11 +34,23 @@ _start:
 	str	w3, [x2]
 	dsb	sy
 	msr	daifset, #0xf
-	/* State-agnostic entry: Qualcomm ABL jumps with MMU and caches off,
-	 * MTK LK may jump with them still on (LK runs with the MMU enabled).
-	 * Everything below assumes the ABL state, so normalize first. */
+	/* LK's cached framebuffer writes are DIRTY LINES in the D-cache:
+	 * they evict LATER and overwrite our non-cached console writes with
+	 * stale logo data (the v19-v27 partial renders). Clean+invalidate
+	 * the whole D-cache by set/way BEFORE the first framebuffer write,
+	 * unconditionally, then drop MMU|C|I so nothing caches behind us. */
+	bl	cache_clean_inv_all
 	mrs	x2, sctlr_el1
-	tbnz	x2, #0, mmu_on_entry
+	bic	x2, x2, #(1 << 0)	/* M  */
+	bic	x2, x2, #(1 << 2)	/* C  */
+	bic	x2, x2, #(1 << 12)	/* I  */
+	msr	sctlr_el1, x2
+	isb
+	tlbi	vmalle1
+	dsb	sy
+	ic	iallu
+	dsb	sy
+	isb
 1:	mov	x19, x0			/* DTB pointer from ABL */
 	msr	spsel, #1
 	adr	x1, _stack_top
@@ -58,23 +70,6 @@ _start:
 4:	wfe
 	b	4b
 
-mmu_on_entry:
-	/* Clean+invalidate the whole D-cache by set/way so no dirty line
-	 * from LK's cacheable view survives the cache-off, then disable
-	 * MMU | C | I, drop the TLB and the I-cache. Clobbers x1-x7. */
-	bl	cache_clean_inv_all
-	mrs	x2, sctlr_el1
-	bic	x2, x2, #(1 << 0)	/* M  */
-	bic	x2, x2, #(1 << 2)	/* C  */
-	bic	x2, x2, #(1 << 12)	/* I  */
-	msr	sctlr_el1, x2
-	isb
-	tlbi	vmalle1
-	dsb	sy
-	ic	iallu
-	dsb	sy
-	isb
-	b	1b
 
 /* Clean+invalidate the entire D-cache by set/way (ARMv8, EL1).
  * Operand format: level<<1 | set<<line_shift | way<<way_shift.
