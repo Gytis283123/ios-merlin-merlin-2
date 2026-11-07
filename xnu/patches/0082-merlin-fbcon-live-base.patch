@@ -1,17 +1,15 @@
-diff --git a/pexpert/arm/pe_serial.c b/pexpert/arm/pe_serial.c
 --- a/pexpert/arm/pe_serial.c
 +++ b/pexpert/arm/pe_serial.c
-@@ -700,7 +700,28 @@
+@@ -719,6 +719,27 @@ extern unsigned char iso_font[256 * 16];
+ 
  static volatile uint32_t *fbcon_base;
  static uint32_t fbcon_width, fbcon_height, fbcon_stride;
- static uint32_t fbcon_cols, fbcon_rows, fbcon_col, fbcon_row;
-+
 +/* merlin: the panel scans ONE contiguous 1088x2340 buffer whose base the
 + * OVL layer-0 address register holds at handoff (LK leaves it pointing at
 + * the live scan buffer). Read it at probe time; the ADT "reg" is only the
 + * fallback for boards without the OVL (sweet/QEMU). */
-+#define FBCON_OVL0_BASE        0x1400b000UL
-+#define FBCON_OVL_L0_ADDR      (FBCON_OVL0_BASE + 0xf40)
++#define FBCON_OVL0_BASE	0x1400b000UL
++#define FBCON_OVL_L0_ADDR	(FBCON_OVL0_BASE + 0xf40)
 +
 +static uint32_t
 +fbcon_live_base(void)
@@ -26,14 +24,14 @@ diff --git a/pexpert/arm/pe_serial.c b/pexpert/arm/pe_serial.c
 +	}
 +	return 0;
 +}
++
+ static uint32_t fbcon_cols, fbcon_rows, fbcon_col, fbcon_row;
  
  static void
- fbcon_clear_row(uint32_t row)
- {
-@@ -700,8 +700,17 @@
- 	if (!fbcon_width || !fbcon_height || fbcon_stride < fbcon_width * 4) {
+@@ -835,7 +856,16 @@ fbcon_probe(void)
  		return;
  	}
+ 	sweet_early_mark(17, "fbcon config read; mapping");
 -	fbcon_base = (volatile uint32_t *)ml_io_map_wcomb(reg[0], reg[1]);
 +	{
 +		uint32_t live = fbcon_live_base();
@@ -45,7 +43,6 @@ diff --git a/pexpert/arm/pe_serial.c b/pexpert/arm/pe_serial.c
 +	if (fbcon_base == NULL) {
 +		fbcon_base = (volatile uint32_t *)ml_io_map_wcomb(reg[0], reg[1]);
 +	}
+ 	sweet_early_mark(18, "fbcon mapping returned");
  	if (fbcon_base != NULL) {
  		register_serial_functions(&sweet_fbcon_serial_functions);
- 	}
- }
