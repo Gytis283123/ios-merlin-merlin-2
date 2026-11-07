@@ -82,6 +82,34 @@ static int mem_cb(const struct fdt_mem_ent *e, void *ctx)
 	return 0;
 }
 
+/* Display ruler: markers at KNOWN fb coordinates. One photo of the sheared
+ * result encodes the panel's true scan pitch and origin: where each marker
+ * lands vs where it was drawn is the mapping, and the vertical marker
+ * columns reveal the pitch directly (a wrong pitch turns columns into
+ * diagonals whose slope is pitch_draw/pitch_scan). */
+static void paint_ruler(void)
+{
+	volatile uint32_t *fb = con_fb;
+	const uint32_t w = con_w, h = con_h, pitch = con_stride / 4;
+
+	/* full-height 6px vertical lines every 120 px -> pitch readout */
+	for (uint32_t x = 0; x + 6 <= w; x += 120)
+		for (uint32_t y = 0; y < h; y++)
+			for (uint32_t dx = 0; dx < 6; dx++)
+				fb[y * pitch + x + dx] = 0xFFFFFFFF;
+	/* full-width 6px horizontal lines every 240 px -> row mapping */
+	for (uint32_t y = 0; y + 6 <= h; y += 240)
+		for (uint32_t x = 0; x < w; x++)
+			for (uint32_t dy = 0; dy < 6; dy++)
+				fb[(y + dy) * pitch + x] = 0xFF00C8FF;
+	/* origin marker: 40px red-on-white block at (0,0) and at (w-40, h-40) */
+	for (uint32_t y = 0; y < 40; y++)
+		for (uint32_t x = 0; x < 40; x++) {
+			fb[y * pitch + x] = 0xFFFF0000;
+			fb[(h - 40 + y) * pitch + (w - 40 + x)] = 0xFF00FF00;
+		}
+}
+
 void merlin_main(uint64_t dtb)
 {
 	/* Kill the watchdog fuse FIRST: from here on any death is a frozen
@@ -105,6 +133,7 @@ void merlin_main(uint64_t dtb)
 	con_clear(GREEN);
 
 	con_clear(RED);
+	paint_ruler();
 	con_str("MERLIN", "shim up (toprgu stopped)");
 	con_hex2("DTB", "at=", (uint32_t)dtb, "magic=", dtb ? *(volatile uint32_t *)dtb : 0);
 	con_hex2("FB", "at=", (uint32_t)fb, "geom=",

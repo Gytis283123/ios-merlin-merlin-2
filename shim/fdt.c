@@ -157,7 +157,9 @@ int fdt_walk_mem(uintptr_t fdt,
 			}
 			collecting = 0;
 			nomap = 0;
-			if (depth == 1 && name_is(nm, len, "memory"))
+			if (depth == 1 && len >= 6 && nm[0] == 'm' && nm[1] == 'e'
+			    && nm[2] == 'm' && nm[3] == 'o' && nm[4] == 'r'
+			    && nm[5] == 'y')
 				collecting = 1;
 			else if (depth == 2 && name_is(w.n1, w.n1_len, "reserved-memory"))
 				collecting = 2;
@@ -168,7 +170,9 @@ int fdt_walk_mem(uintptr_t fdt,
 			depth--;
 			if (depth < 0)
 				depth = 0;
-			collecting = (depth == 1 && name_is(w.n1, w.n1_len, "memory")) ? 1
+			collecting = (depth == 1 && w.n1_len >= 6 && w.n1[0] == 'm'
+			    && w.n1[1] == 'e' && w.n1[2] == 'm' && w.n1[3] == 'o'
+			    && w.n1[4] == 'r' && w.n1[5] == 'y') ? 1
 				: (depth == 2 && name_is(w.n1, w.n1_len, "reserved-memory")) ? 2 : 0;
 			continue;
 		}
