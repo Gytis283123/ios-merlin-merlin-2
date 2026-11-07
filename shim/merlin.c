@@ -9,6 +9,7 @@
 #include "console.h"
 #include "fdt.h"
 #include "loader.h"
+#include "font.h"
 #include "merlin.h"
 
 static inline uint32_t rd32(uintptr_t a) { return *(volatile uint32_t *)a; }
@@ -97,6 +98,23 @@ static uint64_t merlin_ramdisk(uintptr_t fdt)
 	return MERLIN_RAMDISK_FALLBACK;
 }
 
+
+static void fmt_pitch(char *buf, int n, uint32_t v)
+{
+	char tmp[12];
+	int i = 0;
+	if (!v)
+		tmp[i++] = '0';
+	while (v && i < 11) {
+		tmp[i++] = '0' + (v % 10);
+		v /= 10;
+	}
+	int o = 0;
+	while (i && o < n - 1)
+		buf[o++] = tmp[--i];
+	buf[o] = 0;
+}
+
 /* memory-map report: the live values LK patched into the DTB it hands us.
  * This is the authoritative DRAM map (reserved TEE/SCP/SSPM regions and
  * all) - the ADT's kernel band must avoid every no-map entry. */
@@ -121,6 +139,95 @@ static int mem_cb(const struct fdt_mem_ent *e, void *ctx)
 	return 0;
 }
 
+
+/* Pitch lineup: the same text drawn with several candidate line pitches,
+ * each band in its own color. The panel scans them all with its TRUE
+ * pitch - exactly one band renders clean, and its color names the correct
+ * pitch. One photo, one answer, no guessing. */
+static void draw_str_at(volatile uint32_t *fb, uint32_t row, uint32_t pitch_px,
+			const char *str, uint32_t color)
+{
+	for (int ci = 0; str[ci]; ci++) {
+		char ch = str[ci];
+		if (ch < 0x20 || ch > 0x7e)
+			ch = '?';
+		const unsigned char *g = font8x16[ch - 0x20];
+		for (int gy = 0; gy < 16; gy++)
+			for (int gx = 0; gx < 8; gx++) {
+				uint32_t c = (g[gy] & (0x80 >> gx)) ? color : 0xFF000000;
+				for (int sy = 0; sy < 2; sy++)
+					for (int sx = 0; sx < 2; sx++)
+						fb[(row + gy * 2 + sy) * pitch_px
+						   + ci * 32 + gx * 2 + sx] = c;
+			}
+	}
+}
+
+static void fmt_pitch(char *buf, int n, uint32_t v)
+{
+	char tmp[12];
+	int i = 0;
+	if (!v)
+		tmp[i++] = '0';
+	while (v && i < 11) {
+		tmp[i++] = '0' + (v % 10);
+		v /= 10;
+	}
+	int o = 0;
+	while (i && o < n - 1)
+		buf[o++] = tmp[--i];
+	buf[o] = 0;
+}
+
+static void paint_pitch_lineup(uint32_t rpitch, uint32_t opitch)
+{
+	uint32_t cands[6];
+	int nc = 0;
+	const uint32_t colors[6] = { 0xFFFFFFFF, 0xFFFFFF00, 0xFF00FFFF,
+				     0xFF00FF00, 0xFFFF00FF, 0xFF0080FF };
+	const char *names[6] = { "WHITE", "YELLOW", "CYAN", "GREEN",
+				 "MAGENTA", "ORANGE" };
+
+	void add(uint32_t p) {
+		if (p < 64 || p > 16384 || (p & 3))
+			return;
+		for (int i = 0; i < nc; i++)
+			if (cands[i] == p)
+				return;
+		if (nc < 6)
+			cands[nc++] = p;
+	}
+	add(opitch);
+	add(rpitch);
+	add(rpitch * 4);
+	add(opitch * 4);
+	add(4320);
+	add(4352);
+
+	volatile uint32_t *fb = con_fb;
+	char buf[24];
+	for (int k = 0; k < nc; k++) {
+		uint32_t pp = cands[k] / 4;	/* pixels per line */
+		uint32_t band_row = 400 * k;	/* assumed-row spacing */
+		for (int j = 0; j < 3; j++) {
+			uint32_t row = band_row + j * 40;
+			if (j == 0) {
+				fmt_pitch(buf, sizeof(buf), cands[k]);
+				draw_str_at(fb, row, pp, names[k], colors[k]);
+				draw_str_at(fb, row, pp, buf, colors[k]);
+			} else if (j == 1) {
+				draw_str_at(fb, row, pp,
+					    "THE QUICK BROWN FOX 0123456789",
+					    colors[k]);
+			} else {
+				draw_str_at(fb, row, pp,
+					    "pitch lineup band rendering test",
+					    colors[k]);
+			}
+		}
+	}
+}
+
 void merlin_main(uint64_t dtb)
 {
 	/* Kill the watchdog fuse FIRST: from here on any death is a frozen
@@ -137,6 +244,8 @@ void merlin_main(uint64_t dtb)
 	 *   RED     - full banner, payload loading
 	 */
 	uint32_t rdma_val = 0, ovl_val = 0;
+	uint32_t rpitch_val = rd32(MERLIN_RDMA_SRC_PITCH);
+	uint32_t opitch_val = rd32(MERLIN_OVL_L0_PITCH);
 	uint64_t scan = merlin_scan_base(dtb, &rdma_val, &ovl_val);
 	/* Full geometry from the hardware: the RDMA source pitch is what the
 	 * panel actually steps per line, the OVL src-size holds (h<<16)|w.
@@ -165,6 +274,7 @@ void merlin_main(uint64_t dtb)
 
 	con_clear(RED);
 	con_str("MERLIN", "shim up (toprgu stopped)");
+	paint_pitch_lineup(rpitch_val, opitch_val);
 	con_hex2("SCAN", "rdma=", rdma_val, "ovl=", ovl_val);
 	con_hex2("GEOM", "pit=", pitch, "osz=", osize);
 	con_hex2("GEOM2", "opit=", opitch, "wh=", (w << 16) | h);
