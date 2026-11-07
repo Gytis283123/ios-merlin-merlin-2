@@ -64,10 +64,10 @@ static void put_char(int col, char ch, uint32_t fg)
 	for (int gy = 0; gy < 16; gy++)
 		for (int gx = 0; gx < 8; gx++) {
 			uint32_t c = (g[gy] & (0x80 >> gx)) ? fg : con_bg;
-			for (int sy = 0; sy < SCALE; sy++) {
+			for (int sy = 0; sy < con_scale; sy++) {
 				volatile uint32_t *p = con_fb + (y0 + gy * SCALE + sy) * (con_stride / 4)
 						       + x0 + gx * SCALE;
-				for (int sx = 0; sx < SCALE; sx++)
+				for (int sx = 0; sx < con_scale; sx++)
 					p[sx] = c;
 			}
 		}
