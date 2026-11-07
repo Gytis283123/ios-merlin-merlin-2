@@ -599,6 +599,27 @@ user's photos:
   marks only, ~8 lines, own commit, built only after the restore is
   confirmed) and dropped at the first regression.
 
+### v44 restore CONFIRMED + careful 0085 (2026-11-07 night 10)
+
+- v44 restore confirmed by the user: back to the v42 deep boot, silent
+  after the VM-zone phase (the 'SWEET BATTERY' line is just the last
+  distinctive line before the wrapped tail; true last output = 'VM
+  bootstrap done').
+- **Patch 0085 (careful form, CI 42415491414, applied, kernel 6433d833
+  - same 17205024 size class as the proven 0083 builds):** one line per
+  SUBSYSTEM transition in kernel_startup_initialize_upto only:
+  `SWEET SUBSYS: entering N (hook p)` from STARTUP_SUB_KMEM up (~12
+  lines per boot). Nothing else. Own commit - single revert drops it.
+- **Flash test: `out/shim-boot-merlin-v45-subsys.img`** SHA256
+  30055cfd…b639 (shim/DTB/header unchanged). Photo the screen tail: the
+  last `SWEET SUBSYS:` line names the subsystem that never finishes.
+  Subsystem ids: 5=KPRINTF 6=PMAP_STEAL 7=KMEM 8=ZALLOC 9=KTRACE
+  10=PERCPU 11=EVENT 13=CODESIGNING 14=OSLOG 15=MACH_IPC 16=THREAD_CALL
+  17=SYSCTL 18=EARLY_BOOT.
+- If it dies INSIDE a subsystem (no next SUBSYS line): the (hook p) on
+  the last line symbolicates against
+  artifacts/kernel-0085/kernel.development.sweet.link.
+
 ### DISPLAY SOLVED (2026-11-07 evening, v6-v33, user-confirmed full panel)
 
 
