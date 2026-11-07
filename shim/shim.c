@@ -59,7 +59,7 @@ static inline void wr8(uintptr_t a, uint8_t v) { *(volatile uint8_t *)a = v; }
 
 extern char secondary_entry[];
 
-static const char *stage;	/* set at runtime: no absolute pointers in data */
+const char *stage;	/* set at runtime: no absolute pointers in data */
 static volatile uint64_t sec_mpidr[NR_CPUS];
 static volatile uint64_t sec_probe[4];	/* CPU1 redistributor write test */
 static volatile uint32_t irq_count, irq_other, irq_last;
@@ -143,7 +143,8 @@ void exc_handler(uint64_t slot, uint64_t *regs)
 		irq_handler();
 		return;
 	}
-	con_clear(BLUE);
+	/* no screen clear: keep the banner/probe lines above - they name
+	 * the exact failing step */
 	switch (slot & 3) {
 	case 0: con_str("PANIC", "SYNC"); break;
 	case 1: con_str("PANIC", "IRQ"); break;
@@ -161,11 +162,13 @@ void exc_handler(uint64_t slot, uint64_t *regs)
 			 rsr("esr_el2") >> 26);
 		con_hex("ELR2", rsr("elr_el2"));
 		con_hex("FAR2", rsr("far_el2"));
+		con_hex("SPSR2", rsr("spsr_el2"));
 	} else {
 		con_hex2("EL", "1 esr=", rsr("esr_el1"), "ec=",
 			 rsr("esr_el1") >> 26);
 		con_hex("ELR", rsr("elr_el1"));
 		con_hex("FAR", rsr("far_el1"));
+		con_hex("SPSR", rsr("spsr_el1"));
 	}
 	con_hex("X0", regs[0]);
 	con_hex("X1", regs[1]);

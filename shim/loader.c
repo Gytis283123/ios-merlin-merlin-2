@@ -153,37 +153,40 @@ const char *loader_boot(uintptr_t dtb)
 	}
 
 	/* Probe row: 64 cyan words at panel row 2050 (inside the single
-	 * contiguous scan buffer, below the console text). */
-	volatile uint32_t *prow = (volatile uint32_t *)
-	    ((uintptr_t)con_fb + 2050UL * con_stride);
-	for (uint32_t k = 0; k < 64; k++)
-		prow[k] = 0xff00ffffU;
-	__asm__ volatile("dsb sy" ::: "memory");
-	con_hex2("STRT", "ok at=", (uint32_t)(uintptr_t)prow, "el=", (uint32_t)(cur_el >> 2));
-
-	/* Probe 2: copy a bare `ret` into the kernel band and blr there —
-	 * pure instruction-fetch test, no stores. */
+	 * contiguous scan buffer, below the console text). The stage string
+	 * tracks the exact probe so a PANIC screen names the failing one. */
 	{
+		extern const char *stage;
+		volatile uint32_t *prow = (volatile uint32_t *)
+		    ((uintptr_t)con_fb + 2050UL * con_stride);
+		for (uint32_t k = 0; k < 64; k++)
+			prow[k] = 0xff00ffffU;
+		__asm__ volatile("dsb sy" ::: "memory");
+		con_hex2("STRT", "ok at=", (uint32_t)(uintptr_t)prow, "el=", (uint32_t)(cur_el >> 2));
+
+		/* Probe 2: copy a bare `ret` into the kernel band and blr there —
+		 * pure instruction-fetch test, no stores. */
 		extern const unsigned char exec_ret_stub[], exec_ret_stub_end[];
 		uint64_t n = (uint64_t)(exec_ret_stub_end - exec_ret_stub);
 		uintptr_t scratch = (p->phys_base + 0x1000 + 63) & ~(uintptr_t)63;
 		copy64(scratch, (uintptr_t)exec_ret_stub, n);
 		__asm__ volatile("dc cvau, %0; ic ivau, %0; dsb sy; isb"
 				 :: "r"(scratch) : "memory");
+		stage = "loader-exr";
 		((void (*)(uint64_t))scratch)(0);
 		con_hex2("EXR", "ok at=", (uint32_t)scratch, "n=", (uint32_t)n);
-	}
 
-	/* Probe 3: full paint stub from the band into the probe row. */
-	{
+		/* Probe 3: full paint stub from the band into the probe row. */
 		extern const unsigned char exec_test_stub[], exec_test_stub_end[];
-		uint64_t n = (uint64_t)(exec_test_stub_end - exec_test_stub);
-		uintptr_t scratch = (p->phys_base + 0x1000 + 63) & ~(uintptr_t)63;
+		n = (uint64_t)(exec_test_stub_end - exec_test_stub);
 		copy64(scratch, (uintptr_t)exec_test_stub, n);
 		__asm__ volatile("dc cvau, %0; ic ivau, %0; dsb sy; isb"
 				 :: "r"(scratch) : "memory");
+		stage = "loader-exp";
 		((void (*)(uint64_t))scratch)((uint64_t)(uintptr_t)prow);
 		con_hex2("EXP", "ok at=", (uint32_t)scratch, "n=", (uint32_t)n);
+
+		stage = "loader-ic";
 	}
 	con_str("XNU", "jumping (fbcon clears screen)");
 
