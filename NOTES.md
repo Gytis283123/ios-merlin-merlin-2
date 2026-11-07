@@ -154,3 +154,27 @@ LIVE fb base — compare against the ADT's 0x7e605000 constant afterwards.
   the fresh packer's addresses byte-for-byte). Stock Android boot is NOT on
   the phone; restore later = flash boot from the official merlin fastboot
   ROM. The shim bring-up screen color is RED (project signal convention).
+
+### M1a boot result (2026-11-07 morning): BOOTLOOP
+
+- The user flashed `out/shim-boot-merlin-m1a.img` (SHA256 c991f630…) to
+  boot: device bootloops. No screen observation captured yet (red banner
+  seen or not, loop period unknown) — the color-ladder shim below is the
+  instrumented redo. vbmeta was verified 0x03 = verity+verification
+  disabled, so vbmeta is an unlikely cause; prime suspects are (a) the
+  shim's entry-state assumptions (start.S assumes the Qualcomm ABL jump
+  state; MTK LK may jump with a different CPU state) or (b) the toprgu
+  stop sequence.
+- The user is reflashing the stock OS (their call; phone unusable with the
+  test image). NOTE: after a stock reflash vbmeta returns to verification
+  ENABLED — flash vbmeta-disabled again before any unsigned boot test.
+  The stock boot.img from the Mi Flash ROM package (images/boot.img)
+  becomes the real "restore" backup we never had.
+- Diagnostic image ready: `out/shim-boot-merlin-m1a-diag.img` (SHA256
+  0404cce8…, kernel 4b657ed9… unchanged, ladder shim bc42d13d…): paints
+  MAGENTA at C entry (fallback fb, no DTB), GREEN after the toprgu stop,
+  YELLOW after the DTB parse (live fb), RED at the full banner. Last
+  color on screen during a reset = failing stage.
+- Housekeeping: local out/ and artifacts/ now gitignored (the first
+  ladder commit accidentally tried to push the 130 MB CI kernel link
+  archive — GitHub rejected it; nothing large was pushed).
