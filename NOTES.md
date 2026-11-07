@@ -531,7 +531,34 @@ user's photos:
   next wall precisely; the likely suspects are kernel-side (MMU enable
   path, fbcon probe) and get kernel patches (0083+), not shim work.
 
+### MILESTONE 2026-11-07 late: THE DARWIN (XNU) KERNEL EXECUTES ON MERLIN 🎉
+
+- **User-confirmed after flashing v42 (shim-boot-merlin-v42-rwfix.img):
+  the phone reached the Darwin kernel.** The full chain works:
+  LK -> gzip(shim) -> payload discovery -> segment copy to 0x50000000 ->
+  boot_args/ADT -> HCR_EL2.RW=1 ERET drop to EL1 -> XNU _start ->
+  start_first_cpu -> common_start (0083 ladder + 0082 fbcon kernels).
+- What it took across the day (final root-cause list):
+  1. CI silently skipped patches 0082/0083 (wrong source version + stale
+     context) -> regenerated from the real xnu-buildtree, CI now FAILS
+     if a numbered patch is skipped.
+  2. dc cvau/ic ivau BY VA with the MMU off is UNDEFINED and traps on
+     MT6768 -> removed (global ic iallu instead).
+  3. **HCR_EL2.RW was wiped by the drop's `msr hcr_el2, xzr` -> illegal
+     ERET (EC 0x1e) -> kernel never entered (v35-v41). Fixed: HCR_EL2 =
+     RW (0x80000000) only.**
+- Diagnostic infrastructure that got us here (keep for future walls):
+  shim color/word probes (ENTW/STRT/EXR/CP3), VBAR_EL1+EL2 pointed at
+  the shim vectors, EL-aware PANIC dump (ESR/EC/ELR/FAR/SPSR/HCR,
+  screen NOT cleared), stage markers (loader-exr/exp/ic/jump).
+- NEXT (per the milestone plan in this file): confirm how far the kernel
+  gets (photo: ladder colors and/or kprintf text, mountroot retries =
+  M1a proof), then M2 = MSDC eMMC block driver (rd=msdcroot0) to mount
+  the iOS 16 root from userdata, M3 = SMP via PSCI, M4+ display/touch.
+
 ### DISPLAY SOLVED (2026-11-07 evening, v6-v33, user-confirmed full panel)
+
+
 
 
 
