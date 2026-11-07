@@ -15,9 +15,15 @@
 
 extern volatile uint32_t *con_fb;
 /* Runtime console geometry; defaults are the sweet framebuffer until
- * con_init() replaces them (merlin gets its values from the LK DTB). */
+ * con_init() replaces them (merlin gets its values from the live display
+ * registers). MTK splits tall panels across OVL layers: rows below
+ * con_split draw from con_l1 (a separate buffer), pitch in PIXELS. */
 extern uint32_t con_w, con_h, con_stride;
-void con_init(uint64_t base, uint32_t w, uint32_t h, uint32_t stride);
+extern volatile uint32_t *con_l1;
+extern uint32_t con_split;
+void con_init(uint64_t base, uint32_t w, uint32_t h, uint32_t stride_px);
+void con_init2(uint64_t base, uint64_t base1, uint32_t w, uint32_t h,
+	       uint32_t stride_px, uint32_t split);
 
 void con_clear(uint32_t bg);
 void con_skip(void);

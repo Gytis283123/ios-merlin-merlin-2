@@ -13,12 +13,30 @@
 
 volatile uint32_t *con_fb = (volatile uint32_t *)FB_BASE;
 uint32_t con_w = FB_W, con_h = FB_H, con_stride = FB_STRIDE;
+volatile uint32_t *con_l1 = 0;
+uint32_t con_split = 0xFFFFFFFF;
 static uint32_t con_bg;
 static int row;
 
+/* pixel pointer for console row y, column x (two OVL layers) */
+static volatile uint32_t *px(uint32_t y, uint32_t x)
+{
+	if (y >= con_split && con_l1)
+		return con_l1 + (y - con_split) * (con_stride / 4) + x;
+	return con_fb + y * (con_stride / 4) + x;
+}
+
 void con_init(uint64_t base, uint32_t w, uint32_t h, uint32_t stride)
 {
+	con_init2(base, 0, w, h, stride, 0xFFFFFFFF);
+}
+
+void con_init2(uint64_t base, uint64_t base1, uint32_t w, uint32_t h,
+	       uint32_t stride, uint32_t split)
+{
 	con_fb = (volatile uint32_t *)base;
+	con_l1 = base1 ? (volatile uint32_t *)base1 : 0;
+	con_split = base1 ? split : 0xFFFFFFFF;
 	con_w = w;
 	con_h = h;
 	con_stride = stride;
@@ -27,7 +45,7 @@ void con_init(uint64_t base, uint32_t w, uint32_t h, uint32_t stride)
 void con_clear(uint32_t bg)
 {
 	for (uint32_t y = 0; y < con_h; y++) {
-		volatile uint32_t *line = con_fb + y * (con_stride / 4);
+		volatile uint32_t *line = px(y, 0);
 		for (uint32_t x = 0; x < con_w; x++)
 			line[x] = bg;
 	}
