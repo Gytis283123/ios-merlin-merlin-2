@@ -1,0 +1,77 @@
+name: qemu
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: [xnu]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: qemu-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    # Boots the latest successful xnu kernel + the merlin ADT (QEMU variant:
+    # QEMU virt GIC/CNTFRQ) in QEMU and captures the framebuffer console,
+    # serial and the exception log. Isolates kernel-binary bugs (visible here,
+    # debuggable locally) from phone-hardware/entry-state issues (QEMU boots,
+    # phone does not).
+    runs-on: ubuntu-24.04
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-arm llvm
+
+      - name: Fetch latest green kernel artifact
+        run: |
+          RUN_ID=$(gh run list -R "$GITHUB_REPOSITORY" -w xnu -s success -L 1 --json databaseId -q '.[0].databaseId')
+          echo "kernel run: $RUN_ID"
+          gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -n xnu-kernel -D artifacts/kernel
+          ls -la artifacts/kernel/
+          sha256sum artifacts/kernel/kernel.development.sweet
+
+      - name: Build payload (QEMU ADT)
+        run: |
+          python3 tools/mkadt-merlin.py out/merlin-qemu.adt --qemu
+          python3 tools/mkpayload.py artifacts/kernel/kernel.development.sweet \
+            out/merlin-qemu.adt out/payload-qemu.bin \
+            --cmdline "debug=0xc serial=3 cpus=1 keepsyms=1 -enable_kprintf_spam -noprogress"
+
+      - name: Derive qemu-merlin harness (merlin fb geometry)
+        run: |
+          sed "s/^FB_BASE, FB_W, FB_H = .*/FB_BASE, FB_W, FB_H = 0x7e605000, 1080, 2340/" \
+            tools/qemu-sweet.py > tools/qemu-merlin.py
+          grep -n "^FB_BASE" tools/qemu-merlin.py
+
+      - name: Boot in QEMU
+        run: |
+          python3 tools/qemu-merlin.py out/payload-qemu.bin out/qemu \
+            --secs 60 --kernel artifacts/kernel/kernel.development.sweet || true
+          ls -la out/qemu/
+
+      - name: Show screen + result
+        if: always()
+        run: |
+          cat out/qemu/result.json 2>/dev/null || true
+          echo "--- fb.txt (framebuffer console) ---"
+          cat out/qemu/fb.txt 2>/dev/null || echo "(no fb.txt)"
+          echo "--- serial tail ---"
+          tail -40 out/qemu/serial.txt 2>/dev/null || echo "(no serial)"
+          echo "--- qemu exception log tail ---"
+          tail -40 out/qemu/qemu.log 2>/dev/null || echo "(no qemu.log)"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qemu-smoke
+          path: out/qemu/
+          if-no-files-found: warn

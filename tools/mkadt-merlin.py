@@ -18,7 +18,10 @@ Layout for the RAM-disk milestone (M1):
     kernel band: the kernel's fbcon (ADT node sweet-fbcon) and boot_args
     Video both point there.
 
-Usage:  mkadt-merlin.py OUT.adt [--dump]
+Usage:  mkadt-merlin.py OUT.adt [--dump] [--qemu]
+  --qemu : QEMU virt twin (tools/qemu-merlin.py): QEMU's GIC addresses and
+          CNTFRQ, single visible CPU; merlin RAM band and fbcon kept (plain
+          RAM under the 4G virt board).
 """
 import hashlib, os, struct, sys
 
@@ -58,6 +61,10 @@ N_CPUS = 8
 MERLIN_ECID = 0x4D45524C00000001
 CHIP_ID = 0x8015
 
+# QEMU virt (-M virt,gic-version=3 -cpu cortex-a76): GICD/GICR and the
+# generic timer's CNTFRQ (the vtimer INTID is the standard 27 like merlin).
+QEMU_GICD, QEMU_GICR, QEMU_TIMEBASE = 0x08000000, 0x080a0000, 62500000
+
 BOOT_MANIFEST_HASH = hashlib.sha384(b'merlin boot manifest').digest()
 
 # The iOS userland is the iPhone X (iPhone10,3 / D22AP) IPSW, exactly like
@@ -91,11 +98,12 @@ def node(name, props=(), children=()):
     return n
 
 
-def build(seed=None):
+def build(seed=None, qemu=False):
     phys_base, mem_size = PHYS_BASE, MEM_SIZE
     # Panic log carved off the top so the kernel never allocates over it.
     panic_base = phys_base + mem_size - PANIC_LOG_SIZE
     mem_size -= PANIC_LOG_SIZE
+    gicd, gicr, timebase = (QEMU_GICD, QEMU_GICR, QEMU_TIMEBASE) if qemu         else (GICD, GICR, TIMEBASE)
     seed = seed if seed is not None else os.urandom(64)
     phandle = iter(range(1, 1000))
     ph = lambda: ('AAPL,phandle', u32(next(phandle)))
@@ -146,12 +154,12 @@ def build(seed=None):
             ('l2-cache-id', u32(core)),
             ('l3-cache-id', u32(0)),
             ('state', cstr('running' if core == 0 else 'stopped')),
-            ('timebase-frequency', u32(TIMEBASE)),
+            ('timebase-frequency', u32(timebase)),
             ('clock-frequency', u32(A75_FREQ if core >= 6 else A55_FREQ)),
             ('bus-frequency', u32(100000000)),
             ('memory-frequency', u32(1866000000)),
-            ('peripheral-frequency', u32(TIMEBASE)),
-            ('fixed-frequency', u32(TIMEBASE)),
+            ('peripheral-frequency', u32(timebase)),
+            ('fixed-frequency', u32(timebase)),
         ]))
     cpus = node('cpus', [ph(), ('#address-cells', u32(1)),
                          ('#size-cells', u32(0))], cpu_nodes)
@@ -160,8 +168,8 @@ def build(seed=None):
         ph(),
         ('compatible', cstr('arm,gic-v3')),
         ('interrupt-controller', b''),
-        ('virtual-timer-intid', u32(VTIMER_INTID)),
-        ('reg', u64(GICD - SOC_BASE, GICD_SIZE, GICR - SOC_BASE, GICR_SIZE)),
+        ('virtual-timer-intid', u32(VTIMER_INTID if not qemu else 27)),
+        ('reg', u64(gicd - SOC_BASE, GICD_SIZE, gicr - SOC_BASE, GICR_SIZE)),
     ])
     arm_io = node('arm-io', [
         ph(),
@@ -227,7 +235,7 @@ def build(seed=None):
 
 
 if __name__ == '__main__':
-    root = build()
+    root = build(qemu='--qemu' in sys.argv)
     blob = adt.serialize(root)
     open(sys.argv[1], 'wb').write(blob)
     if '--dump' in sys.argv:
