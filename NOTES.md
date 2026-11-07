@@ -257,3 +257,28 @@ LIVE fb base — compare against the ADT's 0x7e605000 constant afterwards.
      constant; also check vramSize-based double buffering.
 - The UEFI side quest (edk2-mt6765-uefi repo) is moot for now — the boot
   chain works; parked.
+
+### DISPLAY SOLVED (2026-11-07 evening, v27-v30 + user hardware validation)
+
+The panel's scan geometry, established through 25 builds and proven by the
+user's photos:
+- **Pitch 4352 bytes (1088 px)** — 1080 content + 8 px of 64-byte
+  alignment. User A/B'd 4320 vs 4352 with the cache fix active: 4352 wins.
+- **Two-layer framebuffer**: rows 0-1439 fetch from the OVL L0 address
+  (register 0x1400bf40, read live), rows 1440+ from the atag videolfb
+  buffer (0x7e605000 - LK's logo buffer; the v19 photo showed the Redmi
+  logo displaying there). OVL L1 register reads 0 (unused by LK).
+- **Resolution 1080x2340** unchanged; font scale 3 (host-render proven).
+- **The D-cache purge at shim entry is MANDATORY**: LK leaves dirty D-cache
+  lines that evict over our non-cached writes (stale logo data clobbering
+  the console - every "partial render" symptom). The purge must run before
+  the first framebuffer write, and the DTB pointer must be saved to x19
+  BEFORE the purge (the flush clobbers x0-x12; v28 shipped both fixes
+  but only one worked - the pointer bug produced a blank screen).
+- The RDMA MEM_START register reads 0 (the RDMA is not the active fetch
+  engine); MEM_SRC_PITCH reads 1080 (pixels) - DO NOT write either
+  register (v21's write compressed the scan 4x and invalidated the knob
+  sweeps; v15's pixel-to-byte heuristic shredded the text).
+- The console C code is proven correct via the host render (shim/out/
+  host_test.exe -> out/host.ppm): identical code renders pixel-perfect
+  on the host - all phone-side artifacts were environmental.

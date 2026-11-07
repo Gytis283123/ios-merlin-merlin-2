@@ -27,7 +27,10 @@
 
 #define MERLIN_FB_W		1080
 #define MERLIN_FB_H		2340
-#define MERLIN_FB_STRIDE	(MERLIN_FB_W * 4)
+/* The panel scans at a 64-byte-aligned pitch: 1088 px = 4352 bytes for
+ * 1080 content. User-validated on hardware (v27 photo: clean text;
+ * v30 A/B: 4352 preferred over 4320 once the cache purge landed). */
+#define MERLIN_FB_STRIDE	(1088 * 4)
 #define MERLIN_FB_FALLBACK	0x7e605000UL	/* dts atag,videolfb default */
 /* atag,videolfb points at the START of the 24.9MB LK vram carve-out
  * (vramSize 0x17e8000). NOTE: drawing at base + (vramSize - fb) broke the
