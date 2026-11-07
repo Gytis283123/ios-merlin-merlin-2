@@ -1,0 +1,31 @@
+--- a/osfmk/kern/startup.c
++++ b/osfmk/kern/startup.c
+@@ -396,6 +396,13 @@ void
+ kernel_startup_initialize_upto(startup_subsystem_id_t upto)
+ {
+ 	struct startup_entry *cur = startup_entry_cur;
++#if SWEET
++	/* patch 0085 (careful): one line per SUBSYSTEM transition, nothing
++	 * else - the merlin boot goes silent after the ZALLOC-era hooks
++	 * ("VM bootstrap done" is its last output). ~12 lines total; printf
++	 * is proven working at this stage ("VM bootstrap done" is printf). */
++	startup_subsystem_id_t sweet_last_sub = STARTUP_SUB_NONE;
++#endif
+ 
+ 	assert(startup_phase < upto);
+ 
+@@ -405,6 +412,14 @@ kernel_startup_initialize_upto(startup_subsystem_id_t upto)
+ 			kprintf("%s[%d, rank %d]: %p(%p)\n", __func__,
+ 			    cur->subsystem, cur->rank, cur->func, cur->arg);
+ 		}
++#if SWEET
++		if (cur->subsystem != sweet_last_sub &&
++		    cur->subsystem >= STARTUP_SUB_KMEM) {
++			printf("SWEET SUBSYS: entering %d (hook %p)\n",
++			    cur->subsystem, cur->func);
++		}
++		sweet_last_sub = cur->subsystem;
++#endif
+ 		startup_phase = cur->subsystem - 1;
+ 		kernel_startup_log(cur->subsystem);
+ 		cur->func(cur->arg);
