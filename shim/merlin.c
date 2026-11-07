@@ -134,7 +134,7 @@ static int mem_cb(const struct fdt_mem_ent *e, void *ctx)
  *   merlinfb_w=<px>  merlinfb_h=<px>  merlinfb_p=<bytes/line>
  *   merlinfb_b=<hex base>  merlinfb_s=<font scale>
  * Defaults: 1080x2340, pitch 4320, base = the RDMA register, scale 2. */
-static uint32_t cfg_w = 1080, cfg_h = 2340, cfg_p = 4320, cfg_s = 3;
+static uint32_t cfg_w = 1080, cfg_h = 2340, cfg_p = 4352, cfg_s = 3;
 static uint32_t cfg_base;
 
 static uint32_t cl_val(const char *cl, const char *key)
@@ -200,22 +200,27 @@ void merlin_main(uint64_t dtb)
 	/* The full-screen console = the RDMA background buffer (v13 proved
 	 * its placement and full-red fill at pitch 4320). MEM_SRC_PITCH and
 	 * the OVL layer registers stay exactly as LK left them. */
-	uint32_t rdma_val = rd32(MERLIN_RDMA_MEM_START);
-	uint32_t scan = addr_plausible(rdma_val) ? rdma_val
-						 : (uint32_t)MERLIN_FB_FALLBACK;
 	parse_display_args(merlin_ramdisk(dtb));
-	if (!cfg_base)
-		cfg_base = scan;
-	/* MEM_SRC_PITCH stays at LK's value: writing it compressed the scan
-	 * 4x (v21 regression) and poisoned every geometry knob sweep. */
+	/* The two-layer display, proven by the v19 photo (clean text) and the
+	 * v20 L1 fix: rows 0-1439 fetch from the OVL L0 address, rows 1440+
+	 * from the atag videolfb buffer (where LK's logo showed). Pitch 4352
+	 * (1088 px). All three addresses printed for the record. */
+	uint32_t l0 = rd32(MERLIN_OVL_L0_ADDR);
+	uint32_t l1reg = rd32(MERLIN_OVL_L1_ADDR);
+	uint64_t atag_fb = merlin_fb_base(dtb);
+	uint32_t rdma_val = rd32(MERLIN_RDMA_MEM_START);
+	if (!addr_plausible(l0))
+		l0 = (uint32_t)atag_fb;
+	uint32_t l1 = (uint32_t)atag_fb;
 
 	con_scale = cfg_s;
-	con_init(cfg_base, cfg_w, cfg_h, cfg_p);
+	con_init2(l0, l1, cfg_w, cfg_h, cfg_p, 1440);
 	con_clear(RED);
 	con_str("MERLIN", "shim up (toprgu stopped)");
 	con_hex2("CFG", "w=", cfg_w, "h=", cfg_h);
 	con_hex2("CFGP", "p=", cfg_p, "s=", cfg_s);
-	con_hex2("CFGB", "b=", cfg_base, "scan=", scan);
+	con_hex2("LAY", "l0=", l0, "l1=", l1);
+	con_hex2("REGS", "l1r=", l1reg, "rdma=", rdma_val);
 	con_hex2("SCAN", "rdma=", rdma_val, "pitch=", cfg_p);
 	con_hex2("DTB", "at=", (uint32_t)dtb, "magic=", dtb ? *(volatile uint32_t *)dtb : 0);
 	con_hex2("FB", "at=", (uint32_t)merlin_fb_base(dtb), "geom=",
