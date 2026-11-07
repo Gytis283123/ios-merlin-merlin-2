@@ -178,3 +178,32 @@ LIVE fb base — compare against the ADT's 0x7e605000 constant afterwards.
 - Housekeeping: local out/ and artifacts/ now gitignored (the first
   ladder commit accidentally tried to push the 130 MB CI kernel link
   archive — GitHub rejected it; nothing large was pushed).
+
+### LK reverse engineering + the real boot-format story (2026-11-07)
+
+- lk.img (stock V12.5.1.0.RJOMIXM package, extracted to
+  `D:\things\Merlin\stock-rom\`): MTK IMG wrapper, payload = **ARM32
+  (Thumb-2) LK** — MediaTek LK runs AArch32 and jumps to the 64-bit kernel
+  via the "K64" path ("[LK]jump to K64 0x%x", "smc jump" — the jump goes
+  through ATF via SMC). VA base 0x4C400000 = file offset 0x200 (ARM32
+  vectors); VA = 0x4C400000 + file_off - 0x200; literal pools confirm
+  (2,748 string-region pointers). The mboot debug strings ("boot image
+  header magic error", "no mkimg header…") are unreferenced leftovers —
+  direct xref hunting dead-ends; the ANDROID! magic constants sit in pools
+  at 0xaa464 (data table) and 0xb8430. RE continues (lkre2.py).
+- **The 0117-era image in the boot slot was a CORRUPTED GZIP**: kernel slot
+  starts with a valid gzip header but the deflate stream is invalid — the
+  "gzip corrupted images before" rule in the old kit README came from this.
+  That image could never boot; the phone falling to TWRP on first probe was
+  its only honest behavior.
+- Stock boot.img (this firmware): kernel = Image.gz (real gzip), header
+  tail@0x66C = 1660, os_version 0x16000157, stock cmdline; its "dtb" region
+  is MTK-wrapped (no plain FDT magic). The verbatim stock DTB (181,203 B,
+  plain FDT) from the old image stays our DTB of choice.
+- **The October kit's v17 probe painted colors with: RAW kernel slot +
+  VERBATIM stock header clone (patch only kernel/ramdisk/dtb sizes) +
+  raw payload + stock DTB.** That recipe is field-tested on this unit.
+- **v5** (`out/shim-boot-merlin-m1a-v5.img`, SHA256 787f648a…): stock
+  header verbatim (verified: zero byte diffs outside the three sizes) +
+  v3 shim (asm watchdog kill + MMU hardening + color ladder) + raw payload
+  + stock DTB. This is the next flash test.
