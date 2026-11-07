@@ -42,6 +42,8 @@ def main():
     ap.add_argument('--cmdline', default=DEFAULT_CMDLINE)
     ap.add_argument('--ramdisk', help='optional rootfs image (rd=md0)')
     ap.add_argument('--dtb', help='optional stock merlin DTB (device artifact)')
+    ap.add_argument('--clone-header', default='D:/things/Merlin/stock-rom/boot.img',
+                    help='stock boot.img whose 1660-byte header is cloned verbatim')
     args = ap.parse_args()
 
     os.makedirs(OUT, exist_ok=True)
@@ -58,6 +60,8 @@ def main():
                    args.img, '--kernel', args.shim, '--ramdisk', payload]
     if args.dtb:
         bootimg_cmd += ['--dtb', args.dtb]
+    if args.clone_header and os.path.exists(args.clone_header):
+        bootimg_cmd += ['--clone-header', args.clone_header]
     run(bootimg_cmd)
 
     for p in (args.kernel, args.shim, payload, args.img):
