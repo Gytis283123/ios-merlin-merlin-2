@@ -58,6 +58,30 @@ static uint64_t merlin_ramdisk(uintptr_t fdt)
 	return MERLIN_RAMDISK_FALLBACK;
 }
 
+/* memory-map report: the live values LK patched into the DTB it hands us.
+ * This is the authoritative DRAM map (reserved TEE/SCP/SSPM regions and
+ * all) - the ADT's kernel band must avoid every no-map entry. */
+static int mem_lines;
+static int mem_cb(const struct fdt_mem_ent *e, void *ctx)
+{
+	(void)ctx;
+	if (mem_lines >= 12)
+		return 1;
+	char label[6];
+	const char *kind = "RVD";
+	if (e->kind[0] == 'm')
+		kind = "MEM";
+	else if (e->nomap)
+		kind = "RVDN";	/* reserved, no-map: the dangerous ones */
+	for (int i = 0; i < 4 && kind[i]; i++)
+		label[i] = kind[i];
+	label[4] = '0' + (mem_lines % 10);
+	label[5] = 0;
+	con_hex2(label, "b=", (uint32_t)e->base, "s=", (uint32_t)e->size);
+	mem_lines++;
+	return 0;
+}
+
 void merlin_main(uint64_t dtb)
 {
 	/* Kill the watchdog fuse FIRST: from here on any death is a frozen
