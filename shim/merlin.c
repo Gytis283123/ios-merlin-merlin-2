@@ -99,21 +99,6 @@ static uint64_t merlin_ramdisk(uintptr_t fdt)
 }
 
 
-static void fmt_pitch(char *buf, int n, uint32_t v)
-{
-	char tmp[12];
-	int i = 0;
-	if (!v)
-		tmp[i++] = '0';
-	while (v && i < 11) {
-		tmp[i++] = '0' + (v % 10);
-		v /= 10;
-	}
-	int o = 0;
-	while (i && o < n - 1)
-		buf[o++] = tmp[--i];
-	buf[o] = 0;
-}
 
 /* memory-map report: the live values LK patched into the DTB it hands us.
  * This is the authoritative DRAM map (reserved TEE/SCP/SSPM regions and
