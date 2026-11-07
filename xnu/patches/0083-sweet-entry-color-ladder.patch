@@ -1,0 +1,58 @@
+diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
+index 505533a..777d3e0 100644
+--- a/osfmk/arm64/start.s
++++ b/osfmk/arm64/start.s
+@@ -42,6 +42,29 @@
+ 
+ 
+ 
++/*
++ * SWEET entry color ladder (merlin bring-up, patch 0083): paint the
++ * framebuffer directly at early checkpoints so a photo of the panel shows
++ * how far start.s gets without any console. basereg holds the PA of boot
++ * args; only x4-x6 are clobbered. All three call sites run with the MMU
++ * and caches off, so PA stores land in the scanned framebuffer.
++ */
++.macro SWEET_PAINT	color, basereg
++	ldr	x4, [\basereg, #40]		// boot_args->Video.v_baseAddr
++	mov	x5, #0x40000000			// sanity: RAM window (merlin 0x7d9b0000 fb)
++	cmp	x4, x5
++	b.lo	91f
++	mov	x5, #0x80000000
++	cmp	x4, x5
++	b.hs	91f
++	mov	w5, #(\color)
++	mov	x6, #0x40000			// 1 MB of words
++1:	str	w5, [x4], #4
++	subs	x6, x6, #1
++	b.ne	1b
++91:
++.endm
++
+ .macro MSR_VBAR_EL1_X0
+ #if defined(KERNEL_INTEGRITY_KTRR)
+ 	mov	x1, lr
+@@ -220,6 +243,7 @@ LEXT(ResetHandlerData)
+ 	.align	3
+ 	.globl EXT(_start)
+ LEXT(_start)
++	SWEET_PAINT	0xff0000ff, x0
+ 	b	EXT(start_first_cpu)
+ 
+ 
+@@ -462,6 +486,7 @@ LEXT(start_first_cpu)
+ 
+ 	mov		x20, x0
+ 	mov		x21, #0
++	SWEET_PAINT	0xff00ff00, x20
+ 
+ 	// Set low reset vector before attempting any loads
+ 	adrp	x0, EXT(LowExceptionVectorBase)@page
+@@ -740,6 +765,7 @@ common_start:
+ 	PAC_INIT_KEY_STATE tmp=x0, tmp2=x1
+ #endif /* HAS_APPLE_PAC */
+ 
++	SWEET_PAINT	0xffffff00, x20
+ 	// Enable caches, MMU, ROP and JOP
+ 	MOV64   x0, SCTLR_EL1_DEFAULT
+ 	MSR_SCTLR_EL1_X0
