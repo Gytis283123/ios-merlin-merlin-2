@@ -282,3 +282,28 @@ user's photos:
 - The console C code is proven correct via the host render (shim/out/
   host_test.exe -> out/host.ppm): identical code renders pixel-perfect
   on the host - all phone-side artifacts were environmental.
+
+### DISPLAY SOLVED (2026-11-07 evening, v6-v33, user-confirmed full panel)
+
+The final geometry, all hardware-sourced (v32's register reads + the user's
+v33 full-panel confirmation):
+- **Base: the OVL L0 address register (0x1400bf40), read live** — 0x7D9B0000
+  at the observed boots (LK's display-pipe allocation; NOT the atag
+  videolfb 0x7e605000, which is the logo buffer the pipe does NOT scan).
+- **Pitch 4352 bytes (1088 px)** — hardware-confirmed by the OVL
+  L0_PITCH register (0x1400b044) reading 0x1100. 1080 content + 8 px of
+  64-byte alignment.
+- **ONE contiguous 1088x2340 scan buffer** — no second layer, no split
+  (the v19 "Redmi logo below the text" = LK's logo drawn lower in the SAME
+  buffer; the v19 "red bar" = our second-segment writes landing at row
+  1440+ of it correctly).
+- Entry ritual: WDT kill first; save the DTB pointer (x19) BEFORE the
+  D-cache clean+invalidate by set/way (LK leaves dirty D-cache lines that
+  evict over our non-cached writes - the cause of every partial render);
+  then MMU|C|I drop, TLBI, IC IALLU.
+- Forbidden: writing MEM_SRC_PITCH (pixels, not bytes - v21's 4x
+  compression), writing the OVL CON registers, trusting the RDMA
+  MEM_START register (reads 0 - the RDMA is not the fetch engine).
+- The console C code proven correct via the host render (host_test.exe).
+- Kernel console: patch 0082 (fbcon reads the live OVL L0 base at
+  serial_init; the ADT reg = the fallback; pitch 4352 via the ADT stride).
