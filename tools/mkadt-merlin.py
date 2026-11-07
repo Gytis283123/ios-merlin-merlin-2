@@ -49,11 +49,11 @@ TIMEBASE = 13000000
 # LK splash framebuffer: merlin.dts /chosen atag,videolfb-fb_base_l (the dts
 # default; LK patches the live value at boot — cross-check on first boot).
 FB, FB_SIZE = 0x7e605000, 0x17e8000
+FB_W, FB_H, FB_STRIDE = 1080, 2340, 1080 * 4
 # The panel scans the LAST framebuffer-sized chunk of the vram (see
 # shim/merlin.h): the fbcon/boot_args draw address is base + vramSize - fb.
 FB_DRAW = FB + FB_SIZE - FB_W * FB_H * 4
 FB_DRAW_SIZE = FB_W * FB_H * 4
-FB_W, FB_H, FB_STRIDE = 1080, 2340, 1080 * 4
 
 # merlin.dts cpus: reg 0x000..0x700 (Aff1:Aff0), A55 1.701 GHz, A75 2.171 GHz
 A55_FREQ = 1701000000

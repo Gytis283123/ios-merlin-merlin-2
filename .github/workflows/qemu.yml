@@ -49,7 +49,7 @@ jobs:
 
       - name: Derive qemu-merlin harness (merlin fb geometry)
         run: |
-          sed "s/^FB_BASE, FB_W, FB_H = .*/FB_BASE, FB_W, FB_H = 0x7f47d800, 1080, 2340/" \
+          sed "s/^FB_BASE, FB_W, FB_H = .*/FB_BASE, FB_W, FB_H = 0x7f449080, 1080, 2340/" \
             tools/qemu-sweet.py > tools/qemu-merlin.py
           grep -n "^FB_BASE" tools/qemu-merlin.py
 

@@ -31,9 +31,10 @@
 #define MERLIN_FB_FALLBACK	0x7e605000UL	/* dts atag,videolfb default */
 /* atag,videolfb points at the START of the 24.9MB LK vram carve-out
  * (vramSize 0x17e8000); the panel scans the LAST framebuffer-sized chunk
- * of it. Drawing at the raw base lands 1088 rows down + 576 px right
+ * of it. Drawing at the raw base lands 1121 rows down + 756 px right
  * (verified on panel: split banner lines + clustered corner squares). */
-#define MERLIN_FB_VRAM_OFF	0xE1D800UL	/* vramSize - W*H*4 */
+#define MERLIN_FB_VRAM_OFF	0xE44080UL	/* vramSize - W*H*4 */
+#define MERLIN_FB_DRAW		(MERLIN_FB_FALLBACK + MERLIN_FB_VRAM_OFF)
 
 #define MERLIN_RAMDISK_FALLBACK	0x47c80000UL	/* base 0x40078000 + 0x07c08000 */
 
