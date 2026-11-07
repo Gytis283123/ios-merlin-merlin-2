@@ -315,7 +315,39 @@ user's photos:
   theory is dead; revisit CPU state (CNTCR/timer gating, GIC state) or go
   straight to the 0083 entry ladder.
 
+### v35-el RESULT + entry color ladder 0083 (2026-11-07 night)
+
+- **v35-el flashed: banner showed `BOOTEL el= 00000002` — MTK ATF really
+  does deliver EL2, the shim's ERET drop ran, and the kernel STILL dies
+  before its first kprintf.** So EL was real (the drop was needed and is
+  now in), but it is not the whole wall.
+- **Patch 0083 (commit, xnu CI run 42401305835): SWEET entry color ladder
+  in `osfmk/arm64/start.s`.** A `SWEET_PAINT color, basereg` macro writes
+  1 MB of a color word straight to boot_args->Video.v_baseAddr (only
+  x4-x6 clobbered; PA sanity window 0x40000000-0x80000000 so it is a
+  no-op on sweet/QEMU panels at 0x9c000000). Checkpoints, all pre-MMU:
+  BLUE (0xff0000ff) at `_start` (x0), GREEN (0xff00ff00) in
+  `start_first_cpu` after `x20 = boot args`, YELLOW (0xffffff00) in
+  `common_start` immediately before the MMU is enabled (x20).
+  Patch generated from pristine xnu-8796.101.5 (the CI source version);
+  `git apply` verified locally (tools/p83_edit.py is the generator).
+- **v36 flash test = CI kernel (with 0083) + current shim (EL drop) +
+  payload-try cmdline + stock DTB/header.** Decision tree from the photo:
+  - BLUE → PC reaches XNU _start; death is after entry. Wait for GREEN.
+  - GREEN → boot args read + early init running. Wait for YELLOW.
+  - YELLOW → kernel reached MMU enable; death at/after MMU on or the
+    console path (0082 fbcon) — pivot to pe_serial/fbcon on merlin.
+  - nothing (red/blank) → XNU's first instructions never execute even at
+    EL1 with a clean drop: suspect the SMC handoff path itself (ATF may
+    re-clean/lock, or the jump target register state) — next: have the
+    SHIM paint the kernel's first 16 bytes region verification, or ERET
+    into a stub first, or dump ELR/ESR via a shim-installed EL1 vector.
+- If YELLOW + no kprintf: strongest suspect is the fbcon probe in patch
+  0082 (ml_io_map of the OVL block before VM init) — test by booting with
+  `serial=0` variant or temporarily reverting to the ADT-reg fallback.
+
 ### DISPLAY SOLVED (2026-11-07 evening, v6-v33, user-confirmed full panel)
+
 
 
 The final geometry, all hardware-sourced (v32's register reads + the user's
