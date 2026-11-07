@@ -60,6 +60,9 @@ static uint64_t merlin_fb_base(uintptr_t fdt)
  * v12 proved the OVL layer address is not what the panel scans. */
 #define MERLIN_RDMA0_BASE	0x1400d000UL
 #define MERLIN_RDMA_MEM_START	(MERLIN_RDMA0_BASE + 0xf00)
+#define MERLIN_RDMA_SRC_PITCH	(MERLIN_RDMA0_BASE + 0x02c)
+#define MERLIN_OVL_L0_SRC_SIZE	(MERLIN_OVL0_BASE + 0x038)
+#define MERLIN_OVL_L0_PITCH	(MERLIN_OVL0_BASE + 0x044)
 
 static int addr_plausible(uint32_t a)
 {
@@ -135,16 +138,31 @@ void merlin_main(uint64_t dtb)
 	 */
 	uint32_t rdma_val = 0, ovl_val = 0;
 	uint64_t scan = merlin_scan_base(dtb, &rdma_val, &ovl_val);
-	con_init(scan, MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
+	/* Full geometry from the hardware: the RDMA source pitch is what the
+	 * panel actually steps per line, the OVL src-size holds (h<<16)|w.
+	 * v13 fixed the base; the text smear is the pitch we assumed. */
+	uint32_t pitch = rd32(MERLIN_RDMA_SRC_PITCH);
+	uint32_t osize = rd32(MERLIN_OVL_L0_SRC_SIZE);
+	uint32_t opitch = rd32(MERLIN_OVL_L0_PITCH);
+	uint32_t w = osize & 0xffff, h = osize >> 16;
+	if (pitch < 64 || pitch > 16384 || (pitch & 3))
+		pitch = MERLIN_FB_STRIDE;
+	if (!w || w > 4096 || !h || h > 8192) {
+		w = MERLIN_FB_W;
+		h = MERLIN_FB_H;
+	}
+	con_init(scan, w, h, pitch);
 	con_clear(MAGENTA);
 
 	uint64_t fb = merlin_fb_base(dtb);
-	con_init(scan, MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
+	con_init(scan, w, h, pitch);
 	con_clear(GREEN);
 
 	con_clear(RED);
 	con_str("MERLIN", "shim up (toprgu stopped)");
 	con_hex2("SCAN", "rdma=", rdma_val, "ovl=", ovl_val);
+	con_hex2("GEOM", "pit=", pitch, "osz=", osize);
+	con_hex2("GEOM2", "opit=", opitch, "wh=", (w << 16) | h);
 	con_hex2("DTB", "at=", (uint32_t)dtb, "magic=", dtb ? *(volatile uint32_t *)dtb : 0);
 	con_hex2("FB", "at=", (uint32_t)fb, "geom=",
 		 (MERLIN_FB_W << 16) | MERLIN_FB_H);
