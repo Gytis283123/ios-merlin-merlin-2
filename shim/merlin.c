@@ -46,6 +46,26 @@ static uint64_t merlin_fb_base(uintptr_t fdt)
 	return MERLIN_FB_FALLBACK;
 }
 
+/* The panel's ACTUAL fetch address: MTK OVL0 (disp_ovl0@1400b000) layer-0
+ * source address register (DISP_REG_OVL_L0_ADDR = 0xf40, mt6768
+ * ddp_reg_ovl.h). LK leaves it pointing at the buffer the panel is
+ * scanning - which the boot ruler proved is NOT the atag videolfb address
+ * (the scan window starts a few hundred rows above it; the atag pointer is
+ * where LK drew the logo, not where the pipe fetches). Read the register
+ * and draw there; fall back to the atag base if it looks bogus. */
+#define MERLIN_OVL0_BASE	0x1400b000UL
+#define MERLIN_OVL_L0_ADDR	(MERLIN_OVL0_BASE + 0xf40)
+
+static uint64_t merlin_scan_base(uintptr_t fdt)
+{
+	uint64_t atag = merlin_fb_base(fdt);
+	uint32_t ovl = rd32(MERLIN_OVL_L0_ADDR);
+	/* accept anything plausibly inside the DRAM neighborhood of the vram */
+	if (ovl >= 0x7c000000UL && ovl < atag + 0x17e8000UL && (ovl & 7) == 0)
+		return ovl;
+	return atag;
+}
+
 /* Payload discovery: prefer what LK published in /chosen, fall back to the
  * known ramdisk load address of the boot image we pack; both are verified
  * against the payload magic by the caller. */
@@ -82,34 +102,6 @@ static int mem_cb(const struct fdt_mem_ent *e, void *ctx)
 	return 0;
 }
 
-/* Display ruler: markers at KNOWN fb coordinates. One photo of the sheared
- * result encodes the panel's true scan pitch and origin: where each marker
- * lands vs where it was drawn is the mapping, and the vertical marker
- * columns reveal the pitch directly (a wrong pitch turns columns into
- * diagonals whose slope is pitch_draw/pitch_scan). */
-static void paint_ruler(void)
-{
-	volatile uint32_t *fb = con_fb;
-	const uint32_t w = con_w, h = con_h, pitch = con_stride / 4;
-
-	/* full-height 6px vertical lines every 120 px -> pitch readout */
-	for (uint32_t x = 0; x + 6 <= w; x += 120)
-		for (uint32_t y = 0; y < h; y++)
-			for (uint32_t dx = 0; dx < 6; dx++)
-				fb[y * pitch + x + dx] = 0xFFFFFFFF;
-	/* full-width 6px horizontal lines every 240 px -> row mapping */
-	for (uint32_t y = 0; y + 6 <= h; y += 240)
-		for (uint32_t x = 0; x < w; x++)
-			for (uint32_t dy = 0; dy < 6; dy++)
-				fb[(y + dy) * pitch + x] = 0xFF00C8FF;
-	/* origin marker: 40px red-on-white block at (0,0) and at (w-40, h-40) */
-	for (uint32_t y = 0; y < 40; y++)
-		for (uint32_t x = 0; x < 40; x++) {
-			fb[y * pitch + x] = 0xFFFF0000;
-			fb[(h - 40 + y) * pitch + (w - 40 + x)] = 0xFF00FF00;
-		}
-}
-
 void merlin_main(uint64_t dtb)
 {
 	/* Kill the watchdog fuse FIRST: from here on any death is a frozen
@@ -125,15 +117,14 @@ void merlin_main(uint64_t dtb)
 	 *   GREEN   - LK DTB parsed, painting the live framebuffer address
 	 *   RED     - full banner, payload loading
 	 */
-	con_init(MERLIN_FB_FALLBACK, MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
+	con_init(merlin_scan_base(dtb), MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
 	con_clear(MAGENTA);
 
 	uint64_t fb = merlin_fb_base(dtb);
-	con_init(fb, MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
+	con_init(merlin_scan_base(dtb), MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
 	con_clear(GREEN);
 
 	con_clear(RED);
-	paint_ruler();
 	con_str("MERLIN", "shim up (toprgu stopped)");
 	con_hex2("DTB", "at=", (uint32_t)dtb, "magic=", dtb ? *(volatile uint32_t *)dtb : 0);
 	con_hex2("FB", "at=", (uint32_t)fb, "geom=",
