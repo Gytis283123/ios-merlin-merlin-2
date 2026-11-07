@@ -217,7 +217,6 @@ void merlin_main(uint64_t dtb)
 	con_hex2("CFGP", "p=", cfg_p, "s=", cfg_s);
 	con_hex2("CFGB", "b=", cfg_base, "scan=", scan);
 	con_hex2("SCAN", "rdma=", rdma_val, "pitch=", cfg_p);
-		 rd32(MERLIN_OVL_L0_CON));
 	con_hex2("DTB", "at=", (uint32_t)dtb, "magic=", dtb ? *(volatile uint32_t *)dtb : 0);
 	con_hex2("FB", "at=", (uint32_t)merlin_fb_base(dtb), "geom=",
 		 (MERLIN_FB_W << 16) | MERLIN_FB_H);
