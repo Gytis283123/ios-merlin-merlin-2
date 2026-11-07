@@ -211,12 +211,14 @@ void merlin_main(uint64_t dtb)
 	 * register read 1080) - set it to match our 1080-wide buffer, which
 	 * we draw at 4320 bytes per line. */
 	uint32_t rdma_val = rd32(MERLIN_RDMA_MEM_START);
+	uint32_t con0_before = rd32(MERLIN_OVL_L0_CON);
 	uint32_t scan = addr_plausible(rdma_val) ? rdma_val
 						 : (uint32_t)MERLIN_FB_FALLBACK;
 	parse_display_args(merlin_ramdisk(dtb));
 	if (!cfg_base)
 		cfg_base = scan;
-	wr32(MERLIN_RDMA_SRC_PITCH, cfg_w);
+	/* MEM_SRC_PITCH stays at LK's value: writing it compressed the scan
+	 * 4x (v21 regression) and poisoned every geometry knob sweep. */
 
 	con_scale = cfg_s;
 	con_init(cfg_base, cfg_w, cfg_h, cfg_p);
@@ -225,7 +227,8 @@ void merlin_main(uint64_t dtb)
 	con_hex2("CFG", "w=", cfg_w, "h=", cfg_h);
 	con_hex2("CFGP", "p=", cfg_p, "s=", cfg_s);
 	con_hex2("CFGB", "b=", cfg_base, "scan=", scan);
-	con_hex2("SCAN", "rdma=", rdma_val, "con0=",
+	con_hex2("SCAN", "rdma=", rdma_val, "pitch=", cfg_p);
+	con_hex2("OVC", "c0b=", con0_before, "c0a=",
 		 rd32(MERLIN_OVL_L0_CON));
 	con_hex2("DTB", "at=", (uint32_t)dtb, "magic=", dtb ? *(volatile uint32_t *)dtb : 0);
 	con_hex2("FB", "at=", (uint32_t)merlin_fb_base(dtb), "geom=",
