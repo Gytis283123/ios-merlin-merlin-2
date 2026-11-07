@@ -392,7 +392,35 @@ user's photos:
   problem; no cyan, no EXECT -> band execution fault (probe never
   returned); `ENTW` mismatch -> payload copy bug.
 
+### v37 RESULT decoded + v38 layered probes (2026-11-07 night 3)
+
+- v37 photo, ENTW decoded (blurry digits resolved by instruction encoding):
+  w0=F9401404 (ldr x4,[x0,#40]) w1=52A08005 (mov x5,#0x40000000)
+  w2=EB05009F (cmp) w3=54000123 (b.lo) = the 0083 paint prologue itself.
+  **The payload copy is byte-perfect; the ladder is the first code.**
+- Photo ends at ENTW: no EXECT line, no cyan -> the band blr never
+  returned. (Banner confirms con uses ONE contiguous buffer at l0=
+  0x7D9B0000 via con_init(split=0xFFFFFFFF), so a row-2000 paint would
+  have been visible.) Suspects left: fetch blocked in the band, or the
+  probe's store row (now known fine), or an exception dying at PC 0.
+- **Shim v38 (CI 42406073592, `out/shim-boot-merlin-v38-probes.img`
+  SHA256 9260feb8…e71e)**: before the jump —
+  1. `STRT ok` = shim stores 64 cyan words at panel row 2050 directly
+     (store + visibility, no execution).
+  2. `EXR ok` = bare `ret` stub copied into the band (0x50001000) and
+     blr'd — pure instruction-fetch test.
+  3. `EXP ok` = full cyan-paint stub into the same probe row.
+  Plus: set_vbars() points VBAR_EL1 AND VBAR_EL2 at the shim vectors
+  before the probes, and exc_handler now reads the CURRENT EL's
+  ESR/ELR/FAR (old code read elr_el1 unconditionally = trap at EL2).
+  **Any fault in the probes or pre-jump path now prints a blue PANIC
+  screen with esr/ec/elr/far instead of vanishing.**
+- Decision tree: PANIC screen ec/FAR = the fault identified directly.
+  All three ok + no kernel = the ERET/EL1 state itself. STRT ok but
+  no EXR = fetch-blocked band. No STRT = store/visibility problem.
+
 ### DISPLAY SOLVED (2026-11-07 evening, v6-v33, user-confirmed full panel)
+
 
 
 
