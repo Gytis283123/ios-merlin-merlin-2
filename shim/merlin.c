@@ -216,66 +216,40 @@ static void paint_pitch_lineup(uint32_t rpitch, uint32_t opitch)
 void merlin_main(uint64_t dtb)
 {
 	/* Kill the watchdog fuse FIRST: from here on any death is a frozen
-	 * screen (no reboot), which is the observable. A ~25 s reset loop
-	 * after this build means we never executed past start.S. */
+	 * screen (no reboot), which is the observable. */
 	merlin_wdt_stop();
 
-	/* Color ladder for the post-entry stages (last color on screen marks
-	 * the stage that died; the fuse is off, so it stays for photographing):
-	 *   MAGENTA - C entry reached, painting the dts-default framebuffer
-	 *             (no DTB touched yet, nothing before it can fault on a
-	 *             bad pointer)
-	 *   GREEN   - LK DTB parsed, painting the live framebuffer address
-	 *   RED     - full banner, payload loading
-	 */
-	uint32_t rdma_val = 0, ovl_val = 0;
-	uint32_t rpitch_val = rd32(MERLIN_RDMA_SRC_PITCH);
-	uint32_t opitch_val = rd32(MERLIN_OVL_L0_PITCH);
-	uint64_t scan = merlin_scan_base(dtb, &rdma_val, &ovl_val);
-	/* Full geometry from the hardware: the RDMA source pitch is what the
-	 * panel actually steps per line, the OVL src-size holds (h<<16)|w.
-	 * v13 fixed the base; the text smear is the pitch we assumed. */
-	uint32_t pitch = rd32(MERLIN_RDMA_SRC_PITCH);
+	/* Display geometry, all from the hardware + vram arithmetic:
+	 * - L0/L1: the OVL layer addresses the panel's two segments fetch
+	 *   (registers 0x1400bf40/0x1400bf60; LK left them pointing at the
+	 *   live scan buffers)
+	 * - pitch 1088 px: the vram = 4 layers x 1088 x 1440 x 4B =
+	 *   0x17E8000 exactly (1080 content + 8px 64-byte alignment)
+	 * - split row 1440: L0 holds the top 1440 rows, L1 the bottom 900
+	 * - w/h: OVL L0 src size (1080x2340 expected) with fallbacks */
+	uint32_t l0 = rd32(MERLIN_OVL_L0_ADDR);
+	uint32_t l1 = rd32(MERLIN_OVL_L1_ADDR);
 	uint32_t osize = rd32(MERLIN_OVL_L0_SRC_SIZE);
-	uint32_t opitch = rd32(MERLIN_OVL_L0_PITCH);
 	uint32_t w = osize & 0xffff, h = osize >> 16;
-	/* MEM_SRC_PITCH is in PIXELS (v14 evidence: register=1080 used as bytes
-	 * shredded the text 4x wide). Convert to bytes for 32bpp; a value that
-	 * already looks like bytes (>=2048) passes through. */
-	if (pitch < 64 || pitch > 4096)
-		pitch = MERLIN_FB_W;
-	if (pitch < 2048)
-		pitch *= 4;
-	if (!w || w > 4096 || !h || h > 8192) {
+	uint32_t rdma_val = 0, ovl_val = 0;
+	(void)merlin_scan_base(dtb, &rdma_val, &ovl_val);
+	if (!addr_plausible(l0))
+		l0 = merlin_fb_base(dtb);
+	if (!addr_plausible(l1) || l1 == l0)
+		l1 = l0 + 1088UL * 1440 * 4;
+	if (!w || w > 4096)
 		w = MERLIN_FB_W;
+	if (!h || h > 8192)
 		h = MERLIN_FB_H;
-	}
-	con_init(scan, w, h, pitch);
-	con_clear(MAGENTA);
 
-	uint64_t fb = merlin_fb_base(dtb);
-	con_init(scan, w, h, pitch);
-	con_clear(GREEN);
-
+	con_init2(l0, l1, w, h, 1088, 1440);
 	con_clear(RED);
-	/* Pitch measurement: a full-height vertical line at fb x=540, drawn
-	 * with stride 4320. If the panel's true pitch differs, the line
-	 * drifts horizontally: drift_px over the full height gives
-	 *   true_pitch = 4320 - 4 * drift_px / 2339  (drift = x_bottom - x_top,
-	 *   positive = line leans left going down). Photograph and measure. */
-	{
-		volatile uint32_t *fb = con_fb;
-		for (uint32_t y = 0; y < con_h; y++)
-			for (uint32_t dx = 0; dx < 2; dx++)
-				fb[y * (con_stride / 4) + 540 + dx] = 0xFFFFFFFF;
-	}
 	con_str("MERLIN", "shim up (toprgu stopped)");
-	paint_pitch_lineup(rpitch_val, opitch_val);
 	con_hex2("SCAN", "rdma=", rdma_val, "ovl=", ovl_val);
-	con_hex2("GEOM", "pit=", pitch, "osz=", osize);
-	con_hex2("GEOM2", "opit=", opitch, "wh=", (w << 16) | h);
+	con_hex2("OVL", "l0=", l0, "l1=", l1);
+	con_hex2("GEOM", "w=", w, "h=", h);
 	con_hex2("DTB", "at=", (uint32_t)dtb, "magic=", dtb ? *(volatile uint32_t *)dtb : 0);
-	con_hex2("FB", "at=", (uint32_t)fb, "geom=",
+	con_hex2("FB", "at=", (uint32_t)merlin_fb_base(dtb), "geom=",
 		 (MERLIN_FB_W << 16) | MERLIN_FB_H);
 	con_hex2("MPIDR", "val=", (uint32_t)mpidr(), "frq=", (uint32_t)cntfrq());
 	con_hex2("RD", "fb=", (uint32_t)merlin_ramdisk(dtb), "initrd=", 0);
