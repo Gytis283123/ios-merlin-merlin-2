@@ -58,6 +58,50 @@ static uint64_t merlin_ramdisk(uintptr_t fdt)
 	return MERLIN_RAMDISK_FALLBACK;
 }
 
+/* Framebuffer geometry probe: paints test patterns with two candidate line
+ * pitches so one photographed boot reveals the real LK framebuffer stride.
+ *   LEFT half  (x < 540):  vertical stripes drawn with pitch 4320 (1080*4)
+ *   RIGHT half (x >= 540): same stripes drawn with pitch 4352 (1088*4)
+ * Whichever half shows straight vertical bars on the panel has the true
+ * pitch; if both shear into diagonals, the slope encodes the difference.
+ * Corner squares + top/bottom edge bands check the base and the height
+ * mapping (vramSize hints at double buffering). */
+static void paint_probe(void)
+{
+	volatile uint32_t *fb = con_fb;
+	const uint32_t w = con_w, h = con_h;
+
+	/* stripes: left half pitch 4320, right half pitch 4352 */
+	for (uint32_t y = 0; y < h; y++) {
+		volatile uint32_t *row = fb + y * (4320 / 4);
+		for (uint32_t x = 0; x < 540; x += 108) {
+			uint32_t c = ((x / 108) & 1) ? 0xFFFFFFFF : 0xFF000000;
+			for (uint32_t dx = 0; dx < 8 && x + dx < 540; dx++)
+				row[x + dx] = c;
+		}
+		volatile uint32_t *row2 = fb + y * (4352 / 4);
+		for (uint32_t x = 540; x < w; x += 108) {
+			uint32_t c = ((x / 108) & 1) ? 0xFF00FF00 : 0xFF000000;
+			for (uint32_t dx = 0; dx < 8 && x + dx < w; dx++)
+				row2[x + dx] = c;
+		}
+	}
+	/* corner squares 80x80: TL white, TR yellow, BL green, BR magenta */
+	const struct { uint32_t x0, y0, c; } corners[] = {
+		{0, 0, 0xFFFFFFFF}, {w - 80, 0, 0xFFFFFF00},
+		{0, h - 80, 0xFF00FF00}, {w - 80, h - 80, 0xFFFF00FF},
+	};
+	for (unsigned i = 0; i < 4; i++)
+		for (uint32_t y = 0; y < 80; y++)
+			for (uint32_t x = 0; x < 80; x++)
+				fb[(corners[i].y0 + y) * (4320 / 4) + corners[i].x0 + x] = corners[i].c;
+	/* top/bottom edge bands (8 rows) drawn with pitch 4320 */
+	for (uint32_t x = 0; x < w; x++) {
+		for (uint32_t y = 80; y < 88; y++) fb[y * (4320 / 4) + x] = 0xFF0080FF;
+		for (uint32_t y = h - 88; y < h - 80; y++) fb[y * (4320 / 4) + x] = 0xFF0080FF;
+	}
+}
+
 void merlin_main(uint64_t dtb)
 {
 	/* Kill the watchdog fuse FIRST: from here on any death is a frozen
@@ -81,6 +125,7 @@ void merlin_main(uint64_t dtb)
 	con_clear(GREEN);
 
 	con_clear(RED);
+	paint_probe();
 	con_str("MERLIN", "shim up (toprgu stopped)");
 	con_hex2("DTB", "at=", (uint32_t)dtb, "magic=", dtb ? *(volatile uint32_t *)dtb : 0);
 	con_hex2("FB", "at=", (uint32_t)fb, "geom=",
