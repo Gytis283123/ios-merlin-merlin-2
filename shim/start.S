@@ -20,7 +20,12 @@ _head:
 	.globl _start
 _start:
 	msr	daifset, #0xf
-	mov	x19, x0			/* DTB pointer from ABL */
+	/* State-agnostic entry: Qualcomm ABL jumps with MMU and caches off,
+	 * MTK LK may jump with them still on (LK runs with the MMU enabled).
+	 * Everything below assumes the ABL state, so normalize first. */
+	mrs	x2, sctlr_el1
+	tbnz	x2, #0, mmu_on_entry
+1:	mov	x19, x0			/* DTB pointer from ABL */
 	msr	spsel, #1
 	adr	x1, _stack_top
 	mov	sp, x1
@@ -30,14 +35,75 @@ _start:
 	/* zero .bss */
 	adr	x1, _bss_start
 	adr	x2, _bss_end
-1:	cmp	x1, x2
-	b.hs	2f
+2:	cmp	x1, x2
+	b.hs	3f
 	str	xzr, [x1], #8
-	b	1b
-2:	mov	x0, x19
+	b	2b
+3:	mov	x0, x19
 	bl	shim_main
-3:	wfe
-	b	3b
+4:	wfe
+	b	4b
+
+mmu_on_entry:
+	/* Clean+invalidate the whole D-cache by set/way so no dirty line
+	 * from LK's cacheable view survives the cache-off, then disable
+	 * MMU | C | I, drop the TLB and the I-cache. Clobbers x1-x7. */
+	bl	cache_clean_inv_all
+	mrs	x2, sctlr_el1
+	bic	x2, x2, #(1 << 0)	/* M  */
+	bic	x2, x2, #(1 << 2)	/* C  */
+	bic	x2, x2, #(1 << 12)	/* I  */
+	msr	sctlr_el1, x2
+	isb
+	tlbi	vmalle1
+	dsb	sy
+	ic	iallu
+	dsb	sy
+	isb
+	b	1b
+
+/* Clean+invalidate the entire D-cache by set/way (ARMv8, EL1).
+ * Operand format: level<<1 | set<<line_shift | way<<way_shift.
+ * Clobbers x0-x12; returns with all levels up to LoC flushed. */
+	.globl cache_clean_inv_all
+cache_clean_inv_all:
+	mrs	x0, clidr_el1
+	ubfx	x3, x0, #24, #3		/* LoC: level of coherence */
+	cbz	x3, 9f
+	mov	x10, #0			/* level, 0-based */
+1:	add	x2, x10, x10, lsl #1	/* 3*level */
+	add	x2, x2, #1
+	lsr	x1, x0, x2
+	and	x1, x1, #7		/* cache type at this level */
+	cmp	x1, #2
+	b.lt	8f			/* none / instruction-only */
+	lsl	x7, x10, #1
+	msr	csselr_el1, x7		/* CSSELR: level<<1 */
+	isb
+	mrs	x1, ccsidr_el1
+	and	x2, x1, #7
+	add	x2, x2, #4		/* log2(line bytes) */
+	ubfx	x4, x1, #3, #10		/* associativity - 1 */
+	clz	w5, w4			/* way shift (32-bit count!) */
+	ubfx	x6, x1, #13, #15	/* number of sets - 1 */
+	mov	x8, #0			/* set counter */
+2:	mov	x9, x4			/* way counter (ways-1) */
+3:	lsl	x7, x9, x5
+	lsl	x12, x10, #1
+	orr	x11, x12, x7		/* level<<1 | way<<way_shift */
+	lsl	x7, x8, x2
+	orr	x11, x11, x7		/* | set<<line_shift */
+	dc	cisw, x11
+	subs	x9, x9, #1
+	b.ge	3b
+	add	x8, x8, #1
+	cmp	x8, x6
+	b.le	2b
+8:	add	x10, x10, #1
+	subs	x3, x3, #1
+	b.gt	1b
+	dsb	sy
+9:	ret
 
 /* PSCI CPU_ON target. x0 = context id = cpu index (1..7). */
 	.globl secondary_entry

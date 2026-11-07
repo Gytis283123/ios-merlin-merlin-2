@@ -60,26 +60,25 @@ static uint64_t merlin_ramdisk(uintptr_t fdt)
 
 void merlin_main(uint64_t dtb)
 {
-	/* Color ladder for bootloop postmortems: the LAST color on screen
-	 * while the box resets marks the stage that died (film one loop
-	 * cycle and read it off; the color persists during the watchdog
-	 * fuse, no delays needed).
+	/* Kill the watchdog fuse FIRST: from here on any death is a frozen
+	 * screen (no reboot), which is the observable. A ~25 s reset loop
+	 * after this build means we never executed past start.S. */
+	merlin_wdt_stop();
+
+	/* Color ladder for the post-entry stages (last color on screen marks
+	 * the stage that died; the fuse is off, so it stays for photographing):
 	 *   MAGENTA - C entry reached, painting the dts-default framebuffer
 	 *             (no DTB touched yet, nothing before it can fault on a
 	 *             bad pointer)
-	 *   GREEN   - toprgu watchdog stop written
-	 *   YELLOW  - LK DTB parsed, painting the live framebuffer address
+	 *   GREEN   - LK DTB parsed, painting the live framebuffer address
 	 *   RED     - full banner, payload loading
 	 */
 	con_init(MERLIN_FB_FALLBACK, MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
 	con_clear(MAGENTA);
 
-	merlin_wdt_stop();
-	con_clear(GREEN);
-
 	uint64_t fb = merlin_fb_base(dtb);
 	con_init(fb, MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
-	con_clear(YELLOW);
+	con_clear(GREEN);
 
 	con_clear(RED);
 	con_str("MERLIN", "shim up (toprgu stopped)");
