@@ -1,0 +1,85 @@
+diff --git a/pexpert/arm/pe_serial.c b/pexpert/arm/pe_serial.c
+--- a/pexpert/arm/pe_serial.c
++++ b/pexpert/arm/pe_serial.c
+@@ -700,16 +700,30 @@
+ #define FBCON_FG        0xffffffffu
+ #define FBCON_BG        0xff000000u
+ 
+ static volatile uint32_t *fbcon_base;
++static volatile uint32_t *fbcon_base1;
+ static uint32_t fbcon_width, fbcon_height, fbcon_stride;
++static uint32_t fbcon_split;
+ static uint32_t fbcon_cols, fbcon_rows, fbcon_col, fbcon_row;
++
++/* Row addressing for panels whose scan is split across two OVL layers
++ * (merlin: the top 1440 rows live in the OVL layer-0 buffer, the bottom
++ * rows in the logo buffer). Single-segment boards keep base1 = NULL. */
++static volatile uint32_t *
++fbcon_row_ptr(uint32_t y)
++{
++	if (y >= fbcon_split && fbcon_base1 != NULL) {
++		return fbcon_base1 + (y - fbcon_split) * (fbcon_stride / 4);
++	}
++	return fbcon_base + y * (fbcon_stride / 4);
++}
+ 
+ static void
+ fbcon_clear_row(uint32_t row)
+ {
+ 	for (uint32_t y = row * 16 * FBCON_SCALE; y < (row + 1) * 16 * FBCON_SCALE; y++) {
+-		volatile uint32_t *line = fbcon_base + y * (fbcon_stride / 4);
++		volatile uint32_t *line = fbcon_row_ptr(y);
+ 		for (uint32_t x = 0; x < fbcon_width; x++) {
+ 			line[x] = FBCON_BG;
+ 		}
+ 	}
+@@ -730,9 +730,9 @@
+ 	const unsigned char *glyph = iso_font + c * 16;
+ 	uint32_t x0 = fbcon_col * 8 * FBCON_SCALE, y0 = fbcon_row * 16 * FBCON_SCALE;
+ 	for (uint32_t gy = 0; gy < 16; gy++) {
+ 		for (uint32_t sy = 0; sy < FBCON_SCALE; sy++) {
+-			volatile uint32_t *line = fbcon_base + (y0 + gy * FBCON_SCALE + sy) * (fbcon_stride / 4) + x0;
++			volatile uint32_t *line = fbcon_row_ptr(y0 + gy * FBCON_SCALE + sy) + x0;
+ 			for (uint32_t gx = 0; gx < 8; gx++) {
+ 				uint32_t px = (glyph[gy] & (1u << gx)) ? FBCON_FG : FBCON_BG;
+ 				for (uint32_t sx = 0; sx < FBCON_SCALE; sx++) {
+ 					line[gx * FBCON_SCALE + sx] = px;
+@@ -739,9 +739,37 @@
+ 	}
+ 	if (!fbcon_width || !fbcon_height || fbcon_stride < fbcon_width * 4) {
+ 		return;
+ 	}
+-	fbcon_base = (volatile uint32_t *)ml_io_map_wcomb(reg[0], reg[1]);
++	/* merlin: the panel's top 1440 rows are fetched from the OVL layer-0
++	 * address register (LK leaves it pointing at the live scan buffer),
++	 * and the ADT "reg" holds the bottom segment (the logo buffer). The
++	 * "split" property gates the two-layer mode; only the merlin ADT sets
++	 * it, so sweet/QEMU keep the single-segment path. */
++	if (SecureDTGetProperty(entry, "split", (void const **)&val, &size) == kSuccess &&
++	    size == 4) {
++		fbcon_split = *val;
++	}
++	if (fbcon_split) {
++		volatile uint32_t const *ovl = (volatile uint32_t const *)
++		    ml_io_map_wcomb(0x1400b000UL, 0x1000UL);
++		if (ovl != NULL) {
++			uint32_t a = ovl[0xf40 / 4];
++			if (a >= 0x40000000UL && a < 0x80000000UL && (a & 7) == 0) {
++				fbcon_base = (volatile uint32_t *)
++				    ml_io_map_wcomb(a, 1440UL * fbcon_stride);
++			}
++		}
++		if (fbcon_base != NULL) {
++			fbcon_base1 = (volatile uint32_t *)
++			    ml_io_map_wcomb(reg[0], reg[1]);
++		}
++	}
++	if (fbcon_base == NULL) {
++		fbcon_base = (volatile uint32_t *)ml_io_map_wcomb(reg[0], reg[1]);
++		fbcon_split = 0;
++		fbcon_base1 = NULL;
++	}
+ 	if (fbcon_base != NULL) {
+ 		register_serial_functions(&sweet_fbcon_serial_functions);
+ 	}
+ }
