@@ -55,13 +55,29 @@ static uint64_t merlin_fb_base(uintptr_t fdt)
  * and draw there; fall back to the atag base if it looks bogus. */
 #define MERLIN_OVL0_BASE	0x1400b000UL
 #define MERLIN_OVL_L0_ADDR	(MERLIN_OVL0_BASE + 0xf40)
+/* The primary pipe on mt6768 fetches through RDMA0 (disp_rdma0@1400d000),
+ * memory mode: DISP_REG_RDMA_MEM_START_ADDR = base+0xf00 (ddp_reg_dma.h).
+ * v12 proved the OVL layer address is not what the panel scans. */
+#define MERLIN_RDMA0_BASE	0x1400d000UL
+#define MERLIN_RDMA_MEM_START	(MERLIN_RDMA0_BASE + 0xf00)
 
-static uint64_t merlin_scan_base(uintptr_t fdt)
+static int addr_plausible(uint32_t a)
+{
+	return a >= 0x40000000UL && a < 0x80000000UL && (a & 7) == 0;
+}
+
+/* Prefer the RDMA fetch address, then OVL, then the atag pointer. */
+static uint64_t merlin_scan_base(uintptr_t fdt, uint32_t *rdma_out,
+				 uint32_t *ovl_out)
 {
 	uint64_t atag = merlin_fb_base(fdt);
+	uint32_t rdma = rd32(MERLIN_RDMA_MEM_START);
 	uint32_t ovl = rd32(MERLIN_OVL_L0_ADDR);
-	/* accept anything plausibly inside the DRAM neighborhood of the vram */
-	if (ovl >= 0x7c000000UL && ovl < atag + 0x17e8000UL && (ovl & 7) == 0)
+	*rdma_out = rdma;
+	*ovl_out = ovl;
+	if (addr_plausible(rdma))
+		return rdma;
+	if (addr_plausible(ovl))
 		return ovl;
 	return atag;
 }
@@ -117,15 +133,18 @@ void merlin_main(uint64_t dtb)
 	 *   GREEN   - LK DTB parsed, painting the live framebuffer address
 	 *   RED     - full banner, payload loading
 	 */
-	con_init(merlin_scan_base(dtb), MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
+	uint32_t rdma_val = 0, ovl_val = 0;
+	uint64_t scan = merlin_scan_base(dtb, &rdma_val, &ovl_val);
+	con_init(scan, MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
 	con_clear(MAGENTA);
 
 	uint64_t fb = merlin_fb_base(dtb);
-	con_init(merlin_scan_base(dtb), MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
+	con_init(scan, MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
 	con_clear(GREEN);
 
 	con_clear(RED);
 	con_str("MERLIN", "shim up (toprgu stopped)");
+	con_hex2("SCAN", "rdma=", rdma_val, "ovl=", ovl_val);
 	con_hex2("DTB", "at=", (uint32_t)dtb, "magic=", dtb ? *(volatile uint32_t *)dtb : 0);
 	con_hex2("FB", "at=", (uint32_t)fb, "geom=",
 		 (MERLIN_FB_W << 16) | MERLIN_FB_H);
