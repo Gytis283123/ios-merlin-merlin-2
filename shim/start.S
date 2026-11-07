@@ -150,6 +150,26 @@ enter_xnu:
 1:	/* EL1 (or EL3, which the BOOTEL banner will expose): direct branch */
 	br	x0
 
+/* Point VBAR_EL1 and VBAR_EL2 at the shim vectors so any exception in the
+ * probes or the pre-jump path lands in the on-screen panic (with ESR/FAR
+ * for the current EL) instead of PC=0 silence. */
+	.globl set_vbars
+set_vbars:
+	adr	x0, vectors
+	msr	vbar_el1, x0
+	msr	vbar_el2, x0
+	isb
+	ret
+
+/* Pure fetch test: does the kernel band execute at all? Copied into the
+ * band by the loader and blr'd; if this returns, instruction fetch from
+ * the band works. 4 bytes, one dcvau/icivau line. */
+	.globl exec_ret_stub
+exec_ret_stub:
+	ret
+	.globl exec_ret_stub_end
+exec_ret_stub_end:
+
 /* SWEET exec-band probe (v37): paint CYAN at x0 (a low framebuffer row the
  * console never uses) and return. Position-independent by construction
  * (relative branches only, no adrp): the loader copies these bytes into the

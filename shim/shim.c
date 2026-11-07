@@ -152,10 +152,21 @@ void exc_handler(uint64_t slot, uint64_t *regs)
 	}
 	con_hex2("SLOT", "n=", slot, "cpu=", rsr("mpidr_el1"));
 	con_str("STAGE", stage);
-	con_hex("ESR", rsr("esr_el1"));
-	con_hex("ELR", rsr("elr_el1"));
-	con_hex("FAR", rsr("far_el1"));
-	con_hex("SPSR", rsr("spsr_el1"));
+	/* Read only the CURRENT exception level's register bank: at EL1 the
+	 * _el2 registers trap, and vice versa. */
+	uint64_t cur_el;
+	__asm__ volatile("mrs %0, CurrentEL" : "=r"(cur_el));
+	if ((cur_el >> 2) == 2) {
+		con_hex2("EL", "2 esr=", rsr("esr_el2"), "ec=",
+			 rsr("esr_el2") >> 26);
+		con_hex("ELR2", rsr("elr_el2"));
+		con_hex("FAR2", rsr("far_el2"));
+	} else {
+		con_hex2("EL", "1 esr=", rsr("esr_el1"), "ec=",
+			 rsr("esr_el1") >> 26);
+		con_hex("ELR", rsr("elr_el1"));
+		con_hex("FAR", rsr("far_el1"));
+	}
 	con_hex("X0", regs[0]);
 	con_hex("X1", regs[1]);
 	con_hex("X30", regs[29]);	/* stashed lr is just above the frame */
