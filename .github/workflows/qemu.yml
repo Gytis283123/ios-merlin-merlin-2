@@ -41,6 +41,7 @@ jobs:
 
       - name: Build payload (QEMU ADT)
         run: |
+          mkdir -p out
           python3 tools/mkadt-merlin.py out/merlin-qemu.adt --qemu
           python3 tools/mkpayload.py artifacts/kernel/kernel.development.sweet \
             out/merlin-qemu.adt out/payload-qemu.bin \
