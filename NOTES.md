@@ -346,7 +346,28 @@ user's photos:
   0082 (ml_io_map of the OVL block before VM init) — test by booting with
   `serial=0` variant or temporarily reverting to the ADT-reg fallback.
 
+### CRITICAL DISCOVERY: CI was silently skipping 0082 AND 0083 (2026-11-07 night, run 42401305835 log)
+
+- The xnu.yml Build log showed `Skipping patch ... 0082-merlin-fbcon-live-base.patch` AND `... 0083-...` —
+  **every kernel since the 0082 commit was effectively a 0081 kernel** (no live-OVL fbcon, no ladder).
+  Causes: 0083 was generated from pristine **xnu-8796.101.5**, but darwin-xnu-build clones
+  **xnu-8796.141.3** (+ our 0001-0081 already applied); 0082's pe_serial.c context never matched the
+  0003-patched file either. `git apply` failures are warnings in blacktop's build.sh, not errors.
+- Fixes (commit, CI run 42402981771 GREEN):
+  1. Both patches regenerated from the REAL tree (extracted `osfmk/arm64/start.s` +
+     `pexpert/arm/pe_serial.c` from the run's `xnu-buildtree` artifact — the pre-skip state;
+     `tools/p83_edit.py` is the generator). Both verified with `git apply --check` against those files.
+  2. xnu.yml now tees `build.log` and **fails the run** if any numbered `00NN-` patch is skipped.
+  Confirmed in the run log: `Applying patch: ...0082...` and `...0083...`, guard passed.
+- **v36 flash test: `out/shim-boot-merlin-v36-ladder.img`** SHA256 ba7be133…00e5
+  (kernel 0082+0083 ff23caad…, shim EL-drop 58cfa6cf… unchanged, stock header/DTB).
+  This is the first kernel that actually CONTAINS the fbcon live-base fix AND the entry ladder.
+- Photo decision tree (ladder paints the panel directly, boot_args->Video.v_baseAddr):
+  BLUE at `_start` → GREEN after boot-args handoff in start_first_cpu → YELLOW in
+  common_start just before MMU enable. Full tree in the previous section.
+
 ### DISPLAY SOLVED (2026-11-07 evening, v6-v33, user-confirmed full panel)
+
 
 
 
