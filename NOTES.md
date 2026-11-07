@@ -366,6 +366,32 @@ user's photos:
   BLUE at `_start` → GREEN after boot-args handoff in start_first_cpu → YELLOW in
   common_start just before MMU enable. Full tree in the previous section.
 
+### v36 RESULT + shim probes v37 (2026-11-07 night 2)
+
+- **v36-ladder flashed: banner `BOOTEL el= 00000002`, "jumping" — and NO
+  BLUE.** The kernel's first instructions never executed even at EL1 after
+  a verified drop. (Banner text still on screen = kernel fbcon never ran.)
+- Offline checks: stock DTB (dtb/stock-merlin.dtb) — RAM
+  0x40000000 size 0x3e605000 (ends AT the LK fb 0x7e605000), NO
+  reserved-memory nodes, kernel band 0x50000000-0x7DF00000 fits. Expected
+  entry words from the kernel Mach-O at file off 0x48c870:
+  d503201f x4 (NOPs).
+- **Shim v37 (commit, shim CI 42404782951, image
+  `out/shim-boot-merlin-v37-probe.img` SHA256 803eba16…60e5) adds two
+  probes printed/painted BEFORE the jump:**
+  1. `ENTW w0..w3` = first instruction words at entry_pa — verifies the
+     segment copy (expect d503201f d503201f d503201f d503201f).
+  2. `EXECT ok at=…` after blr'ing a cyan-paint stub copied into the
+     kernel band's unused gap (phys_base+0x1000, dcvau/icivau). A cyan
+     block at panel row ~2000 = the band IS executable in the ATF/LK
+     state; missing cyan = the band is not executable (firewall/XN), the
+     true wall. If EXECT ok prints AND the kernel still dies: the
+     ERET/EL1 state itself — next instrument a shim-installed EL1 vector
+     + ESR/ELR print.
+- Photo decision tree: cyan bottom block + `EXECT ok` -> band fine, state
+  problem; no cyan, no EXECT -> band execution fault (probe never
+  returned); `ENTW` mismatch -> payload copy bug.
+
 ### DISPLAY SOLVED (2026-11-07 evening, v6-v33, user-confirmed full panel)
 
 
@@ -393,3 +419,41 @@ v33 full-panel confirmation):
 - The console C code proven correct via the host render (host_test.exe).
 - Kernel console: patch 0082 (fbcon reads the live OVL L0 base at
   serial_init; the ADT reg = the fallback; pitch 4352 via the ADT stride).
+
+## Rootfs userdata image built (2026-11-07, Windows/WSL machine)
+
+- Built `ios16-root-20H392-merlin.img` (16 GiB journaled case-sensitive HFS+)
+  + `.simg` (12,145,168,668 B) + `.sha256` from the user's local
+  `iPhone10,3,iPhone10,6_16.7.16_20H392_Restore.ipsw`, using the upstream
+  sweet toolchain (`tools/mkiosroot.sh` + `tools/sweet-root-tweaks.py`).
+  Deliverables in `out/` (gitignored). SHA256: raw img
+  f7b6e21a6c18ab09f0d6f209d3665bb161795c901f864bb341a714b0b42528da,
+  simg 7f309197b21fda624e5c47d2e99444476b437be38e1fb99f7df6000bdbde107c.
+  Contents = plain mkiosroot output (OS root + SystemOS/AppOS cryptexes
+  under /private/preboot/Cryptexes, dyld cache hard-links, logd dirs,
+  systembag.kb) + the full sweet tweaks (launchd _PanicOnCrasX + CommCenter
+  removed, /private/var/containers/*, migration LastSystemVersion,
+  VirtualAudio disabled, MediaToolbox StartRecorderServer=false,
+  BKNoWatchdogs, Setup skipped). fsck clean before and after the tweaks.
+- KNOWN DIFF vs the sweet v14/v15 images: the mobileactivationd data ark was
+  NOT seeded (a fresh image has no system-container UUID dir to put it in) ->
+  expect a mobileactivationd crash loop; and no USB-network preferences.plist
+  (v15 extra). Everything else matches the sweet home-screen images.
+- Build environment (new, on this Windows box): all of it lives in WSL2
+  Ubuntu-24.04 under `/work` (root via `wsl -d Ubuntu-24.04 -u root`; user
+  sudo needs a password). WSL2's stock kernel has NO HFS+ -> built a custom
+  kernel (microsoft tag linux-msft-wsl-6.18.54.1 + CONFIG_HFSPLUS_FS=y +
+  CONFIG_HFS_FS=y), installed as C:\Users\gycioc\bzImage-hfsplus-6.18.54.1,
+  selected via kernel= in C:\Users\gycioc\.wslconfig (backup
+  .wslconfig.bak-2026-11-07; delete the kernel= line to revert). apfs-fuse
+  built from source (sgan81) at /work/apfs-fuse/build, symlinked to
+  /usr/local/bin/apfs-fuse; hfsprogs + android-sdk-libsparse-utils from apt.
+  /work holds the extracted IPSW dmgs (OS=087-86698-044,
+  SystemOS=087-86593-047, AppOS=087-86715-047), the kernel tree, and the
+  image build dir; delete them and compact the WSL disk to reclaim ~35 GB.
+- Flash (Windows fastboot): `fastboot flash -S 512M userdata
+  merlin2\out\ios16-root-20H392-merlin.simg`. REMINDER: the merlin kernel
+  (through 0083) still has NO MSDC/eMMC root driver (M2) — it cannot mount
+  this root yet; the image is staged for that milestone. Confirm the
+  userdata partition is >= 16 GiB before flashing (if not, rebuild with a
+  smaller SIZE argument; the fs only uses 12 GiB... can be trimmed).
