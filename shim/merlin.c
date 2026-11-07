@@ -97,12 +97,11 @@ void merlin_main(uint64_t dtb)
 	 *   GREEN   - LK DTB parsed, painting the live framebuffer address
 	 *   RED     - full banner, payload loading
 	 */
-	con_init(MERLIN_FB_FALLBACK + MERLIN_FB_VRAM_OFF,
-		 MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
+	con_init(MERLIN_FB_FALLBACK, MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
 	con_clear(MAGENTA);
 
 	uint64_t fb = merlin_fb_base(dtb);
-	con_init(fb + MERLIN_FB_VRAM_OFF, MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
+	con_init(fb, MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
 	con_clear(GREEN);
 
 	con_clear(RED);
