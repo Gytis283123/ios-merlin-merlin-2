@@ -141,7 +141,14 @@ enter_xnu:
 	mrs	x4, cnthctl_el2
 	orr	x4, x4, #3		/* EL1PCTEN | EL1PCEN: EL1 sees the phys timer */
 	msr	cnthctl_el2, x4
-	msr	hcr_el2, xzr		/* no stage-2, no traps into EL2 */
+	/* HCR_EL2 = RW (bit 31): EL1 is AArch64, no stage 2, no traps, TGE=0.
+	 * CRITICAL: RW must be SET. ATF configured RW=1 for its K64 jump, and
+	 * clearing HCR entirely (an earlier build) made the ERET to EL1 an
+	 * ILLEGAL exception return (EC 0x1e - EL1 would be AArch32-only), so
+	 * the kernel was never entered: the v35-v41 "el=2 then nothing" wall. */
+	mov	x4, #0x8000
+	movk	x4, #0x8000, lsl #16	/* 0x80000000 = RW */
+	msr	hcr_el2, x4
 	msr	vbar_el1, xzr
 	msr	sctlr_el1, xzr		/* reset value: MMU/C/I off */
 	isb

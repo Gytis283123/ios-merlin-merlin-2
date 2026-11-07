@@ -163,6 +163,7 @@ void exc_handler(uint64_t slot, uint64_t *regs)
 		con_hex("ELR2", rsr("elr_el2"));
 		con_hex("FAR2", rsr("far_el2"));
 		con_hex("SPSR2", rsr("spsr_el2"));
+		con_hex("HCR", rsr("hcr_el2"));
 	} else {
 		con_hex2("EL", "1 esr=", rsr("esr_el1"), "ec=",
 			 rsr("esr_el1") >> 26);
