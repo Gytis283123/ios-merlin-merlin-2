@@ -218,12 +218,14 @@ void merlin_main(uint64_t dtb)
 	uint32_t opitch = rd32(MERLIN_OVL_L0_PITCH);
 	uint32_t ooff = rd32(MERLIN_OVL_L0_OFFSET);
 	uint32_t osize = rd32(MERLIN_OVL_L0_SRC_SIZE);
-	/* The OVL L0 pitch = the hardware's own row step for the visible
-	 * buffer. Use it verbatim as the console stride (bytes). */
+	/* The OVL L0 pitch (4352, hardware-confirmed via this very register)
+	 * is the row step of ONE contiguous 1088x2340 scan buffer at the OVL
+	 * L0 address - no second layer (the v19 "red bar" was our writes at
+	 * row 1440+ of this same buffer). Single flat console. */
 	uint32_t stride = opitch;
 	if (stride < 64 || stride > 16384 || (stride & 3))
 		stride = cfg_p;
-	con_init2(l0, l1, cfg_w, cfg_h, stride, 1440);
+	con_init(l0, cfg_w, cfg_h, stride);
 	con_clear(RED);
 	con_str("MERLIN", "shim up (toprgu stopped)");
 	con_hex2("CFG", "w=", cfg_w, "h=", cfg_h);
