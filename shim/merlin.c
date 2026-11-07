@@ -58,74 +58,6 @@ static uint64_t merlin_ramdisk(uintptr_t fdt)
 	return MERLIN_RAMDISK_FALLBACK;
 }
 
-/* Framebuffer geometry probe: paints test patterns with two candidate line
- * pitches so one photographed boot reveals the real LK framebuffer stride.
- *   LEFT half  (x < 540):  vertical stripes drawn with pitch 4320 (1080*4)
- *   RIGHT half (x >= 540): same stripes drawn with pitch 4352 (1088*4)
- * Whichever half shows straight vertical bars on the panel has the true
- * pitch; if both shear into diagonals, the slope encodes the difference.
- * Corner squares + top/bottom edge bands check the base and the height
- * mapping (vramSize hints at double buffering). */
-static void paint_probe(void)
-{
-	volatile uint32_t *fb = con_fb;
-	const uint32_t w = con_w, h = con_h;
-
-	/* stripes: left half pitch 4320, right half pitch 4352 */
-	for (uint32_t y = 0; y < h; y++) {
-		volatile uint32_t *row = fb + y * (4320 / 4);
-		for (uint32_t x = 0; x < 540; x += 108) {
-			uint32_t c = ((x / 108) & 1) ? 0xFFFFFFFF : 0xFF000000;
-			for (uint32_t dx = 0; dx < 8 && x + dx < 540; dx++)
-				row[x + dx] = c;
-		}
-		volatile uint32_t *row2 = fb + y * (4352 / 4);
-		for (uint32_t x = 540; x < w; x += 108) {
-			uint32_t c = ((x / 108) & 1) ? 0xFF00FF00 : 0xFF000000;
-			for (uint32_t dx = 0; dx < 8 && x + dx < w; dx++)
-				row2[x + dx] = c;
-		}
-	}
-	/* corner squares 80x80: TL white, TR yellow, BL green, BR magenta */
-	const struct { uint32_t x0, y0, c; } corners[] = {
-		{0, 0, 0xFFFFFFFF}, {w - 80, 0, 0xFFFFFF00},
-		{0, h - 80, 0xFF00FF00}, {w - 80, h - 80, 0xFFFF00FF},
-	};
-	for (unsigned i = 0; i < 4; i++)
-		for (uint32_t y = 0; y < 80; y++)
-			for (uint32_t x = 0; x < 80; x++)
-				fb[(corners[i].y0 + y) * (4320 / 4) + corners[i].x0 + x] = corners[i].c;
-	/* top/bottom edge bands (8 rows) drawn with pitch 4320 */
-	for (uint32_t x = 0; x < w; x++) {
-		for (uint32_t y = 80; y < 88; y++) fb[y * (4320 / 4) + x] = 0xFF0080FF;
-		for (uint32_t y = h - 88; y < h - 80; y++) fb[y * (4320 / 4) + x] = 0xFF0080FF;
-	}
-}
-
-/* memory-map report: the live values LK patched into the DTB it hands us.
- * This is the authoritative DRAM map (reserved TEE/SCP/SSPM regions and
- * all) - the ADT's kernel band must avoid every no-map entry. */
-static int mem_lines;
-static int mem_cb(const struct fdt_mem_ent *e, void *ctx)
-{
-	(void)ctx;
-	if (mem_lines >= 12)
-		return 1;
-	char label[6];
-	const char *kind = "RVD";
-	if (e->kind[0] == 'm')
-		kind = "MEM";
-	else if (e->nomap)
-		kind = "RVDN";	/* reserved, no-map: the dangerous ones */
-	for (int i = 0; i < 4 && kind[i]; i++)
-		label[i] = kind[i];
-	label[4] = '0' + (mem_lines % 10);
-	label[5] = 0;
-	con_hex2(label, "b=", (uint32_t)e->base, "s=", (uint32_t)e->size);
-	mem_lines++;
-	return 0;
-}
-
 void merlin_main(uint64_t dtb)
 {
 	/* Kill the watchdog fuse FIRST: from here on any death is a frozen
@@ -141,15 +73,15 @@ void merlin_main(uint64_t dtb)
 	 *   GREEN   - LK DTB parsed, painting the live framebuffer address
 	 *   RED     - full banner, payload loading
 	 */
-	con_init(MERLIN_FB_FALLBACK, MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
+	con_init(MERLIN_FB_FALLBACK + MERLIN_FB_VRAM_OFF,
+		 MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
 	con_clear(MAGENTA);
 
 	uint64_t fb = merlin_fb_base(dtb);
-	con_init(fb, MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
+	con_init(fb + MERLIN_FB_VRAM_OFF, MERLIN_FB_W, MERLIN_FB_H, MERLIN_FB_STRIDE);
 	con_clear(GREEN);
 
 	con_clear(RED);
-	paint_probe();
 	con_str("MERLIN", "shim up (toprgu stopped)");
 	con_hex2("DTB", "at=", (uint32_t)dtb, "magic=", dtb ? *(volatile uint32_t *)dtb : 0);
 	con_hex2("FB", "at=", (uint32_t)fb, "geom=",
