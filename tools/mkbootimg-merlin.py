@@ -28,16 +28,15 @@ KERNEL_OFFSET = 0x8000
 RAMDISK_OFFSET = 0x07C08000
 TAGS_OFFSET = 0x0BC08000
 
-# Header conventions cloned from the stock/vendor-packed merlin boot images
-# (the only format this unit's LK is proven to boot). The vendor packer
-# writes 1660 (= header size) into the v2 tail field at 0x66C where the
-# AOSP spec says header_version=2, and the stock cmdline/os_version ride
-# along. We mimic it field-for-field: deviating from these values is the
-# prime suspect for LK refusing to finalize the boot (25 s watchdog loops
-# with no code executed).
-STOCK_CMDLINE = 'bootopt=64S3,32N2,64N2 buildvariant=user'
-STOCK_OS_VERSION = 0x16000157
-TAIL_0x66C = HEADER_SIZE_V2
+# Header conventions: LK on this unit wants the AOSP v2 spec values AND a
+# DTB. Boot matrix (2026-11-07): no DTB -> ~8 s loop; DTB + tail field 2
+# (spec) -> ~25 s loop (LK accepts + jumps, deep path reached); DTB +
+# tail 1660 (vendor-clone experiment) -> ~8 s early reject again. The
+# vendor packer writes 1660 (= header size) at 0x66C, but this unit's LK
+# wants 2 there once a DTB is present.
+SPEC_CMDLINE = ''
+SPEC_OS_VERSION = 0
+TAIL_0x66C = 2
 
 
 def align(n, page=PAGE):
@@ -50,9 +49,10 @@ def main():
     ap.add_argument('--kernel', required=True, help='shim binary')
     ap.add_argument('--ramdisk', required=True, help='SWEETXNU payload')
     ap.add_argument('--dtb', help='optional stock merlin DTB')
-    ap.add_argument('--cmdline', default=STOCK_CMDLINE)
-    ap.add_argument('--name', default='')
-    ap.add_argument('--os-version', type=lambda s: int(s, 0), default=STOCK_OS_VERSION)
+    ap.add_argument('--cmdline', default=SPEC_CMDLINE)
+    ap.add_argument('--name', default='merlin-xnu')
+    ap.add_argument('--os-version', type=lambda s: int(s, 0), default=SPEC_OS_VERSION)
+    ap.add_argument('--tail-0x66c', type=lambda s: int(s, 0), default=TAIL_0x66C)
     args = ap.parse_args()
 
     kernel = open(args.kernel, 'rb').read()
@@ -76,10 +76,10 @@ def main():
     cmd = args.cmdline.encode()[:512]
     hdr[0x40:0x40 + len(cmd)] = cmd
     # v2 tail: recovery_dtbo_size(0) @0x660, recovery_dtbo_offset @0x664,
-    # tail field @0x66C, dtb_size @0x670, dtb_addr @0x674. The tail keeps
-    # the vendor packer's convention (see TAIL_0x66C above).
+    # tail field @0x66C (LK wants 2 here — see the boot matrix above),
+    # dtb_size @0x670, dtb_addr @0x674.
     struct.pack_into('<I', hdr, 0x660, 0)
-    struct.pack_into('<I', hdr, 0x66C, TAIL_0x66C)
+    struct.pack_into('<I', hdr, 0x66C, args.tail_0x66c)
     struct.pack_into('<I', hdr, 0x670, len(dtb))
     struct.pack_into('<Q', hdr, 0x674, BASE + TAGS_OFFSET)
 
