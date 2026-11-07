@@ -19,6 +19,8 @@ _head:
 	.text
 	.globl _start
 _start:
+	mov	x19, x0			/* DTB pointer - saved BEFORE anything
+					 * clobbers x0 (the cache flush does) */
 	/* Kill the toprgu watchdog as the very first action, before any
 	 * state is touched: if LK armed it, nothing else matters until it
 	 * is dead. LK itself pets toprgu, so its page tables cover
@@ -51,7 +53,7 @@ _start:
 	ic	iallu
 	dsb	sy
 	isb
-1:	mov	x19, x0			/* DTB pointer from ABL */
+1:	/* x19 already holds the DTB pointer (saved at entry) */
 	msr	spsel, #1
 	adr	x1, _stack_top
 	mov	sp, x1
