@@ -141,15 +141,19 @@ void merlin_main(uint64_t dtb)
 	 * - split row 1440: L0 holds the top 1440 rows, L1 the bottom 900
 	 * - w/h: OVL L0 src size (1080x2340 expected) with fallbacks */
 	uint32_t l0 = rd32(MERLIN_OVL_L0_ADDR);
-	uint32_t l1 = rd32(MERLIN_OVL_L1_ADDR);
+	uint32_t l1reg = rd32(MERLIN_OVL_L1_ADDR);
 	uint32_t osize = rd32(MERLIN_OVL_L0_SRC_SIZE);
 	uint32_t w = osize & 0xffff, h = osize >> 16;
 	uint32_t rdma_val = 0, ovl_val = 0;
 	(void)merlin_scan_base(dtb, &rdma_val, &ovl_val);
+	uint64_t atag_fb = merlin_fb_base(dtb);
 	if (!addr_plausible(l0))
-		l0 = merlin_fb_base(dtb);
-	if (!addr_plausible(l1) || l1 == l0)
-		l1 = l0 + 1088UL * 1440 * 4;
+		l0 = atag_fb;
+	/* The bottom rows display the LOGO buffer (v19 photo: LK's Redmi logo
+	 * visible there) = the atag videolfb address. The OVL L1 register
+	 * value is printed for the record. */
+	uint32_t l1 = (uint32_t)atag_fb;
+	(void)l1reg;
 	if (!w || w > 4096)
 		w = MERLIN_FB_W;
 	if (!h || h > 8192)
@@ -159,7 +163,8 @@ void merlin_main(uint64_t dtb)
 	con_clear(RED);
 	con_str("MERLIN", "shim up (toprgu stopped)");
 	con_hex2("SCAN", "rdma=", rdma_val, "ovl=", ovl_val);
-	con_hex2("OVL", "l0=", l0, "l1=", l1);
+	con_hex2("OVL", "l0=", l0, "l1r=", l1reg);
+	con_hex2("BUF", "l1=", l1, "atag=", (uint32_t)atag_fb);
 	con_hex2("GEOM", "w=", w, "h=", h);
 	con_hex2("DTB", "at=", (uint32_t)dtb, "magic=", dtb ? *(volatile uint32_t *)dtb : 0);
 	con_hex2("FB", "at=", (uint32_t)merlin_fb_base(dtb), "geom=",
