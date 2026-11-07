@@ -19,6 +19,19 @@ _head:
 	.text
 	.globl _start
 _start:
+	/* Kill the toprgu watchdog as the very first action, before any
+	 * state is touched: if LK armed it, nothing else matters until it
+	 * is dead. LK itself pets toprgu, so its page tables cover
+	 * 0x10007000 and this store works even with the MMU still on.
+	 * After this store a ~25 s reset loop is physically impossible
+	 * unless our first instruction never executed. */
+	movz	x2, #0x7000
+	movk	x2, #0x1000, lsl #16	/* x2 = 0x10007000 (toprgu MODE) */
+	ldr	w3, [x2]
+	bic	w3, w3, #1		/* clear ENABLE, write-key in top byte */
+	orr	w3, w3, #0x22000000
+	str	w3, [x2]
+	dsb	sy
 	msr	daifset, #0xf
 	/* State-agnostic entry: Qualcomm ABL jumps with MMU and caches off,
 	 * MTK LK may jump with them still on (LK runs with the MMU enabled).
