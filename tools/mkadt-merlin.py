@@ -195,7 +195,8 @@ def build(seed=None, qemu=False):
     # the shim console draws to; panel stays alive through the handoff).
     fbcon = node('sweet-fbcon', [
         ph(),
-        ('reg', u64(FB, FB_SIZE)),
+        ('reg', u64(FB, 1440 * FB_STRIDE)),
+        ('split', u32(1440)),
         ('width', u32(FB_W)),
         ('height', u32(FB_H)),
         ('stride', u32(FB_STRIDE)),
