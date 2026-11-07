@@ -419,7 +419,40 @@ user's photos:
   All three ok + no kernel = the ERET/EL1 state itself. STRT ok but
   no EXR = fetch-blocked band. No STRT = store/visibility problem.
 
+### v38 RESULT: PANIC CAPTURED — instruction abort, L1 translation fault (2026-11-07 night 4)
+
+- v38 flashed: **blue PANIC screen** (fault capture worked!). Decoded:
+  `SYNC` slot 4 (current EL SPx sync), taken **to EL2** (ELR2/FAR2 bank
+  printed), `esr=96000021` -> **EC=0x25 = Instruction Abort from a lower
+  EL**, IL=1, IFSC=**0x21 = translation fault, level 1**.
+  `ELR2=40801AA8` `FAR2=4080218C` (blurry digits; also plausible
+  0x40081AA8/0x4008218C = inside the shim itself, or kernel-band
+  addresses - confirm on the next, evidence-preserving panic).
+- KEY DEDUCTION: **a translation fault is impossible with the MMU off.**
+  An MMU was already ON at fault time. The shim runs with the MMU off
+  the whole loader path, and the only code that enables an MMU is the
+  KERNEL in common_start (SCTLR_EL1 bootstrap MMU). So the fault is very
+  likely AFTER the EL2->EL1 drop, in the kernel, after MMU enable - much
+  further than the "no BLUE" v36 result suggested. (Why v36 showed no
+  BLUE: the ladder paints BEFORE the MMU enable; BLUE may have flashed
+  and been replaced by the kernel's early output attempts/panic path.)
+  EC=0x25 (from lower EL, to EL2) is still puzzling: with HCR_EL2=0 an
+  EL1 sync should vector via VBAR_EL1 - which set_vbars points at the
+  SHIM vectors, running the handler at EL1 and printing the EL1 bank.
+  The EL2 bank on screen means the handler ran at EL2. Open question.
+- **Shim v39 (CI 42407263368, `out/shim-boot-merlin-v39-stage.img`
+  SHA256 0127b25c…df38)**: stage is now a global; the loader sets
+  `loader-exr` / `loader-exp` / `loader-ic` before each step; the panic
+  handler NO LONGER clears the screen (the banner/probe lines above the
+  panic block survive and name the exact failing step) and prints SPSR.
+- Next flash: photo of the full screen (panic block AND the lines above
+  it). STAGE tells which probe or jump failed; ELR/FAR/SPSR tell where
+  and in what CPU state. If STAGE=loader-ic / XNU jumping visible, the
+  fault is in the kernel after the drop -> we debug XNU early init with
+  a kernel-side ladder AFTER MMU enable (checkpoints in common_start).
+
 ### DISPLAY SOLVED (2026-11-07 evening, v6-v33, user-confirmed full panel)
+
 
 
 
