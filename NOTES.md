@@ -508,7 +508,31 @@ user's photos:
   ELR/FAR/SPSR (EL-aware) identify it - extend the kernel ladder past
   MMU enable next.
 
+### ROOT CAUSE #2 FOUND AND FIXED: HCR_EL2.RW wiped by the drop (v41 -> v42, 2026-11-07 night 7)
+
+- v41 photo: STRT ok, EXR ok, CP3 pre-jump ok, "XNU jumping", then PANIC
+  with **ec=0000001E = EC 0x1e ILLEGAL EXECUTION STATE**, taken at the
+  ERET (ELR2=kernel entry 0x51490488, no BLUE paint, STAGE=loader-jump).
+- **ROOT CAUSE: enter_xnu wrote `msr hcr_el2, xzr`, which cleared
+  HCR_EL2.RW (bit 31, "EL1 is AArch64").** MTK ATF set RW=1 for its K64
+  jump; with RW=0, EL1 is AArch32-only, so the ERET to EL1 in AArch64
+  state is an ILLEGAL exception return (EC 0x1e) routed back to EL2.
+  The kernel was NEVER entered on any drop build (v35-v41). This was
+  the true wall behind "BOOTEL el=2 then nothing".
+- **Shim v42 (CI 42409922655, `out/shim-boot-merlin-v42-rwfix.img`
+  SHA256 46f7d68b…bceb, shim 288cf8b1…): enter_xnu now sets
+  HCR_EL2 = 0x80000000 (RW=1, everything else 0: no stage 2, no traps,
+  TGE=0) before the ERET.** HCR printed on the panic screen.
+- Expectations for the v42 flash: with the drop finally legal, the
+  kernel should execute: BLUE (paint at _start) -> GREEN (boot args
+  handoff) -> YELLOW (pre-MMU) -> kernel kprintf text on the panel
+  (0082 fbcon live-OVL base). If a panic shows instead, STAGE=loader
+  -jump + the ESR/ELR/FAR/SPSR/HCR dump (now EL-aware) identifies the
+  next wall precisely; the likely suspects are kernel-side (MMU enable
+  path, fbcon probe) and get kernel patches (0083+), not shim work.
+
 ### DISPLAY SOLVED (2026-11-07 evening, v6-v33, user-confirmed full panel)
+
 
 
 
