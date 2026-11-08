@@ -37,13 +37,23 @@ jobs:
           echo "kernel run: $RUN_ID"
           gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -n xnu-kernel -D artifacts/kernel
           ls -la artifacts/kernel/
-          sha256sum artifacts/kernel/kernel.development.sweet
+          # The artifact's kernel filename depends on the KERNEL_CONFIG of the
+          # run that produced it (kernel.development.sweet, kernel.release.sweet,
+          # kernel.debug.sweet...). Pick the single regular kernel file: the
+          # matching .link entry is a directory and SHA256SUMS is not a kernel.
+          KERNEL=$(find artifacts/kernel -maxdepth 1 -type f -name 'kernel*' | sort | head -1)
+          if [ -z "$KERNEL" ]; then
+            echo "::error::no kernel binary in the xnu-kernel artifact"
+            exit 1
+          fi
+          sha256sum "$KERNEL"
+          echo "KERNEL_BIN=$PWD/$KERNEL" >> "$GITHUB_ENV"
 
       - name: Build payload (QEMU ADT)
         run: |
           mkdir -p out
           python3 tools/mkadt-merlin.py out/merlin-qemu.adt --qemu
-          python3 tools/mkpayload.py artifacts/kernel/kernel.development.sweet \
+          python3 tools/mkpayload.py "$KERNEL_BIN" \
             out/merlin-qemu.adt out/payload-qemu.bin \
             --cmdline "debug=0xc serial=3 cpus=1 keepsyms=1 -enable_kprintf_spam -noprogress"
 
@@ -56,7 +66,7 @@ jobs:
       - name: Boot in QEMU
         run: |
           python3 tools/qemu-merlin.py out/payload-qemu.bin out/qemu \
-            --secs 60 --kernel artifacts/kernel/kernel.development.sweet || true
+            --secs 60 --kernel "$KERNEL_BIN" || true
           ls -la out/qemu/
 
       - name: Show screen + result
