@@ -620,31 +620,6 @@ user's photos:
   the last line symbolicates against
   artifacts/kernel-0085/kernel.development.sweet.link.
 
-### BREAKING INSIGHT + 0086: the console WRAPS - the kernel was never "stuck" (2026-11-08)
-
-- v45 photo decode + pe_serial.c audit: the sweet fbcon console WRAPS
-  after fbcon_rows lines (`fbcon_row = (fbcon_row + 1) % fbcon_rows`,
-  73 rows at scale 2 on merlin) - it does NOT scroll. Every boot photo
-  past ~73 lines was a TWO-PASS MOSAIC: newest lines at the TOP, oldest
-  at the bottom. That explains ALL of it:
-  - the "impossible" line order in the v45 photo (PMAP_ACTIVATE_KERNEL/
-    mac_policy/vnguard ABOVE the zone-init lines = newest on top),
-  - "stuck on the SWEET BATTERY log" = the wrap seam,
-  - the "multiple walls" (zone maps / VM bootstrap done): the kernel
-    was most likely RUNNING PAST them while the display showed a stale
-    mosaic. The v45 photo's top rows prove MACH_IPC (15) and
-    PMAP_ACTIVATE_KERNEL were reached - far past the supposed wall.
-- **Patch 0086 (CI 42463916371, applied, kernel e6723de2): fbcon
-  scrolls by one row per newline (~140 KB memmove) instead of wrapping;
-  cursor parks on the second-to-last row so the newest output is always
-  at the bottom.** Own commit; reverts alone if it regresses.
-- **Flash test: `out/shim-boot-merlin-v46-scroll.img`** SHA256
-  ec0e5dee…29bd (kernel 0086 e6723de2..., shim 288cf8b1... unchanged).
-  The boot log should now read normally top-to-bottom, newest at the
-  bottom. Photo the BOTTOM of the screen after it stops: that is now
-  the TRUE last output. Whatever it names is the real next wall - no
-  more mosaic forensics.
-
 ### DISPLAY SOLVED (2026-11-07 evening, v6-v33, user-confirmed full panel)
 
 
