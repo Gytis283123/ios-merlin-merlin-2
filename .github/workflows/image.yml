@@ -1,0 +1,274 @@
+name: image
+
+on:
+  workflow_dispatch:
+    inputs:
+      rom_url:
+        description: "Xiaomi merlin fastboot ROM (.tgz) - source of the stock boot.img (header clone + DTB)"
+        default: "https://bigota.d.miui.com/V12.0.3.0.QJOMIXM/merlin_global_images_V12.0.3.0.QJOMIXM_20200804.0000.00_10.0_global_b25a6faa3e.tgz"
+      stock_boot_url:
+        description: "optional: direct URL to a stock boot.img (e.g. your own backup uploaded somewhere) - skips the ROM download"
+        default: ""
+      dev_run_id:
+        description: "xnu run id with a DEVELOPMENT kernel (default: newest green one)"
+        default: ""
+      dbg_run_id:
+        description: "xnu run id with a DEBUG kernel (default: newest green one)"
+        default: ""
+      shim_run_id:
+        description: "shim run id (default: newest green one)"
+        default: ""
+      image_tag:
+        description: "image-series tag (file names, artifact name, FLASH doc)"
+        default: "v51"
+      build_images:
+        description: "false = fetch + verify the stock firmware only (staged first run)"
+        default: "true"
+      skip_debug:
+        description: "skip the DEBUG-variant image"
+        default: "false"
+
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    # Packages the flashable merlin boot image entirely from CI outputs:
+    # the kernel + shim binaries from their workflow artifacts, a freshly
+    # generated merlin ADT, and the stock merlin boot.img from the official
+    # Xiaomi fastboot ROM - the public source for the header clone (rule 2)
+    # and the plain-FDT stock DTB (rule: the stock dtb slot is MTK-wrapped).
+    # Device artifacts (the phone's own DTB/boot backups) stay out of git;
+    # every step verifies loudly instead of packing something unproven.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CMDLINE: debug=0xc serial=3 cpus=1 keepsyms=1 -enable_kprintf_spam -noprogress
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y device-tree-compiler
+
+      - name: Fetch stock firmware (boot.img)
+        run: |
+          mkdir -p out stock
+          if [ -n "${{ inputs.stock_boot_url }}" ]; then
+            echo "direct stock boot.img URL given, skipping the ROM"
+            curl -fL --retry 5 --retry-delay 10 --retry-all-errors \
+              -o out/stock-boot.img "${{ inputs.stock_boot_url }}"
+          else
+            BIG=/mnt; [ -w /mnt ] || BIG="$RUNNER_TEMP"
+            ROMS="${{ inputs.rom_url }}"
+            MIRROR="${ROMS/bigota.d.miui.com/bn.d.miui.com}"
+            [ "$MIRROR" != "$ROMS" ] && ROMS="$ROMS $MIRROR"
+            ok=""
+            for u in $ROMS; do
+              echo "downloading ROM: $u"
+              rm -f "$BIG/merlin-rom.tgz"
+              if curl -fL --retry 3 --retry-delay 10 --retry-all-errors -C - \
+                   --connect-timeout 30 --speed-time 120 --speed-limit 51200 \
+                   -o "$BIG/merlin-rom.tgz" "$u"; then ok=1; break; fi
+              echo "mirror failed: $u"
+            done
+            [ -n "$ok" ] || { echo "::error::ROM download failed on all mirrors"; exit 1; }
+            tar -xzf "$BIG/merlin-rom.tgz" -C stock --wildcards '*boot.img'
+            rm -f "$BIG/merlin-rom.tgz"
+            BOOT=$(find stock -type f -name boot.img | head -1)
+            [ -n "$BOOT" ] || { echo "::error::no boot.img in the ROM"; exit 1; }
+            cp "$BOOT" out/stock-boot.img
+          fi
+          [ "$(head -c 8 out/stock-boot.img)" = "ANDROID!" ] \
+            || { echo "::error::stock boot.img has no ANDROID! magic"; exit 1; }
+          sha256sum out/stock-boot.img
+
+      - name: Extract stock DTB + header info
+        run: |
+          python3 tools/unpack_bootv2.py out/stock-boot.img /tmp/stock-unpack
+          cp /tmp/stock-unpack/header.txt out/stock-header.txt
+          python3 tools/mkdtb-from-bootimg.py out/stock-boot.img out/stock-merlin.dtb
+          dtc -q -I dtb -O dts out/stock-merlin.dtb -o /dev/null
+          echo "stock DTB model:  $(fdtget out/stock-merlin.dtb / model)"
+          echo "stock DTB compat: $(fdtget out/stock-merlin.dtb / compatible | tr '\n' ' ')"
+          sha256sum out/stock-merlin.dtb
+
+      - name: Fetch shim artifact
+        if: ${{ inputs.build_images == 'true' }}
+        run: |
+          if [ -n "${{ inputs.shim_run_id }}" ]; then
+            ID="${{ inputs.shim_run_id }}"
+          else
+            ID=$(gh run list -R "$GITHUB_REPOSITORY" -w shim -s success -L 1 --json databaseId -q '.[0].databaseId')
+          fi
+          echo "shim run: $ID"
+          mkdir -p artifacts/shim
+          gh run download "$ID" -R "$GITHUB_REPOSITORY" -n merlin-shim -D artifacts/shim
+          ls -la artifacts/shim/
+          sha256sum artifacts/shim/shim-merlin.bin
+          echo "SHIM_ID=$ID" >> "$GITHUB_ENV"
+          echo "SHIM_BIN=$PWD/artifacts/shim/shim-merlin.bin" >> "$GITHUB_ENV"
+
+      - name: Fetch DEVELOPMENT kernel artifact
+        if: ${{ inputs.build_images == 'true' }}
+        run: |
+          WANT=development
+          ID="${{ inputs.dev_run_id }}"
+          if [ -z "$ID" ]; then
+            for id in $(gh run list -R "$GITHUB_REPOSITORY" -w xnu -s success -L 20 --json databaseId -q '.[].databaseId'); do
+              d="artifacts/xnu-$id"; rm -rf "$d"; mkdir -p "$d"
+              gh run download "$id" -R "$GITHUB_REPOSITORY" -n xnu-kernel -D "$d" 2>/dev/null || continue
+              if [ -f "$d/kernel.$WANT.sweet" ]; then ID="$id"; break; fi
+              echo "run $id: not a $WANT kernel, trying older"
+            done
+          else
+            mkdir -p "artifacts/xnu-$ID"
+            gh run download "$ID" -R "$GITHUB_REPOSITORY" -n xnu-kernel -D "artifacts/xnu-$ID"
+          fi
+          [ -n "$ID" ] || { echo "::error::no green xnu run with a $WANT kernel found"; exit 1; }
+          echo "dev kernel run: $ID"
+          sha256sum "artifacts/xnu-$ID/kernel.$WANT.sweet"
+          echo "DEV_ID=$ID" >> "$GITHUB_ENV"
+          echo "DEV_BIN=$PWD/artifacts/xnu-$ID/kernel.$WANT.sweet" >> "$GITHUB_ENV"
+
+      - name: Fetch DEBUG kernel artifact
+        if: ${{ inputs.build_images == 'true' && inputs.skip_debug != 'true' }}
+        run: |
+          WANT=debug
+          ID="${{ inputs.dbg_run_id }}"
+          if [ -z "$ID" ]; then
+            for id in $(gh run list -R "$GITHUB_REPOSITORY" -w xnu -s success -L 20 --json databaseId -q '.[].databaseId'); do
+              d="artifacts/xnu-$id"; rm -rf "$d"; mkdir -p "$d"
+              gh run download "$id" -R "$GITHUB_REPOSITORY" -n xnu-kernel -D "$d" 2>/dev/null || continue
+              if [ -f "$d/kernel.$WANT.sweet" ]; then ID="$id"; break; fi
+              echo "run $id: not a $WANT kernel, trying older"
+            done
+          else
+            mkdir -p "artifacts/xnu-$ID"
+            gh run download "$ID" -R "$GITHUB_REPOSITORY" -n xnu-kernel -D "artifacts/xnu-$ID"
+          fi
+          [ -n "$ID" ] || { echo "::error::no green xnu run with a $WANT kernel found"; exit 1; }
+          echo "dbg kernel run: $ID"
+          sha256sum "artifacts/xnu-$ID/kernel.$WANT.sweet"
+          echo "DBG_ID=$ID" >> "$GITHUB_ENV"
+          echo "DBG_BIN=$PWD/artifacts/xnu-$ID/kernel.$WANT.sweet" >> "$GITHUB_ENV"
+
+      - name: Build payloads + boot images + verify
+        if: ${{ inputs.build_images == 'true' }}
+        run: |
+          TAG="${{ inputs.image_tag }}"
+          python3 tools/mkadt-merlin.py out/merlin.adt
+          python3 tools/mkpayload.py "$DEV_BIN" out/merlin.adt out/payload-dev.bin \
+            --cmdline "$CMDLINE" > out/payload-dev.txt
+          python3 tools/mkbootimg-merlin.py "out/shim-boot-merlin-$TAG-dev.img" \
+            --kernel "$SHIM_BIN" --ramdisk out/payload-dev.bin \
+            --dtb out/stock-merlin.dtb --clone-header out/stock-boot.img
+          python3 tools/verify-bootimg.py "out/shim-boot-merlin-$TAG-dev.img" \
+            --stock out/stock-boot.img --shim "$SHIM_BIN" --payload out/payload-dev.bin \
+            --adt out/merlin.adt --dtb out/stock-merlin.dtb --cmdline "$CMDLINE"
+          if [ -n "$DBG_BIN" ]; then
+            python3 tools/mkpayload.py "$DBG_BIN" out/merlin.adt out/payload-dbg.bin \
+              --cmdline "$CMDLINE" > out/payload-dbg.txt
+            python3 tools/mkbootimg-merlin.py "out/shim-boot-merlin-$TAG-dbg.img" \
+              --kernel "$SHIM_BIN" --ramdisk out/payload-dbg.bin \
+              --dtb out/stock-merlin.dtb --clone-header out/stock-boot.img
+            python3 tools/verify-bootimg.py "out/shim-boot-merlin-$TAG-dbg.img" \
+              --stock out/stock-boot.img --shim "$SHIM_BIN" --payload out/payload-dbg.bin \
+              --adt out/merlin.adt --dtb out/stock-merlin.dtb --cmdline "$CMDLINE"
+          fi
+
+      - name: Manifest + flash doc
+        if: ${{ inputs.build_images == 'true' }}
+        run: |
+          TAG="${{ inputs.image_tag }}"
+          sha256sum out/shim-boot-merlin-*.img out/payload-*.bin out/merlin.adt \
+            out/stock-merlin.dtb out/stock-boot.img | tee out/SHA256SUMS
+          {
+            echo "# merlin boot image $TAG (CI-built)"
+            echo
+            echo "Flash test successor of v50 (kernel 0088 GIC boot probe)."
+            echo
+            echo "- stock firmware (header + DTB): ${{ inputs.rom_url }}"
+            echo "- shim: run $SHIM_ID"
+            echo "- dev kernel: run $DEV_ID"
+            if [ -n "$DBG_ID" ]; then echo "- dbg kernel: run $DBG_ID"; fi
+            echo
+            echo '```'
+            cat out/SHA256SUMS
+            echo '```'
+            echo
+            echo "## Flash (test device - keep your stock boot backup, restore afterwards)"
+            echo
+            echo "    fastboot flash boot shim-boot-merlin-$TAG-dev.img"
+            echo
+            echo "vbmeta must still carry the AVB disable (Xiaomi bits 24/25 at byte"
+            echo "offset 123 - README step 0). If a stock reflash happened since, re-patch it."
+            echo
+            echo "## What to photograph (the screen is the UART)"
+            echo
+            echo "Photo the BOTTOM of the screen when it stops (0087 clear-on-wrap keeps"
+            echo "the newest lines there, in order). Needed:"
+            echo
+            echo "1. The three \`SWEET GIC:\` lines (patch 0088 boot probe):"
+            echo "   - \`SWEET GIC: mpidr= typer= waker= igrp= isen=\`  (typer must carry"
+            echo "     the boot MPIDR 0x81000000 in its upper half if the redistributor"
+            echo "     is real)"
+            echo "   - \`SWEET GIC: gicd_ctlr= igrpen1= sre=\`"
+            echo "   - \`SWEET GIC: tick istatus= pend= ctl=\`"
+            echo "2. Any panic screen (text = kernel panic with backtrace; plain blue ="
+            echo "   shim fault with ESR/ELR/FAR/SPSR/HCR + stage marker)."
+            echo
+            echo "## Decision tree (NOTES.md, v49/v50)"
+            echo
+            echo "- typer=0                  -> GICR window dead for NS"
+            echo "- isen/igrp not sticking   -> NSACR-class denial (ATF security state)"
+            echo "- istatus=0                -> timer/counter itself dead"
+            echo "- istatus=1 + pend bit27   -> GICR fine, delivery path broken"
+            echo "- istatus=1 + no pend      -> enable/group routing lost"
+            echo
+            echo "## Variants"
+            echo
+            echo "- shim-boot-merlin-$TAG-dev.img - DEVELOPMENT kernel (THE flash test)"
+            echo "- shim-boot-merlin-$TAG-dbg.img - DEBUG kernel (assertions + full symbol"
+            echo "  table). Boot it only if the dev photo is inconclusive and more"
+            echo "  verbosity is wanted; DEBUG behaves differently, keep it as the"
+            echo "  second probe."
+            echo
+            echo "## Restore"
+            echo
+            echo "Flash your own stock boot backup (or out/stock-boot.img of the same"
+            echo "firmware from the merlin-stock-firmware artifact) when done testing."
+          } > "out/FLASH-$TAG.md"
+          cat "out/FLASH-$TAG.md"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: merlin-stock-firmware
+          path: |
+            out/stock-boot.img
+            out/stock-merlin.dtb
+            out/stock-header.txt
+          if-no-files-found: warn
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ inputs.build_images == 'true' }}
+        with:
+          name: merlin-boot-image-${{ inputs.image_tag }}
+          path: |
+            out/shim-boot-merlin-*.img
+            out/payload-dev.bin
+            out/payload-dev.txt
+            out/payload-dbg.bin
+            out/payload-dbg.txt
+            out/merlin.adt
+            out/FLASH-*.md
+            out/SHA256SUMS
+          if-no-files-found: error

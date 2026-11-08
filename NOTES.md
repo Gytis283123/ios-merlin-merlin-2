@@ -948,3 +948,78 @@ v33 full-panel confirmation):
   if more verbosity is ever needed).
 - Still open from the previous session: revoke the GitHub token that
   was shared in chat and cut a fresh one.
+
+### Session 2026-11-08 (4): CI boot-image pipeline (v51) - image.yml + mkdtb-from-bootimg + verify-bootimg (agent, no device action)
+
+- User request: "make the Image for The XNU now so i can test it and give new
+  error logs". The pending flash test (v50, kernel 0088 GIC probe) was built
+  locally on the user's Windows/WSL box from device artifacts
+  (dtb/stock-merlin.dtb + backup/stock-boot.img) that live outside git, so
+  this session makes the image build a first-class CI workflow:
+  **`.github/workflows/image.yml`** (dispatch-only) packs the flashable
+  boot.img from (a) the newest green xnu kernel artifacts, (b) the newest
+  green merlin-shim artifact, (c) a freshly generated merlin ADT, and (d)
+  the stock merlin boot.img downloaded from the official Xiaomi fastboot
+  ROM. No kernel/shim source changes; the v50 flash test configuration is
+  reproduced, the new image series starts at **v51**.
+- **Provenance of the stock header/DTB in CI (observation + known risk):**
+  default ROM = official merlin global `V12.0.3.0.QJOMIXM` (Android 10,
+  2020-08, bigota 3,505,313,165 B, URL verified 200; bn.d.miui.com and the
+  Alibaba-SG OSS mirror carry the identical file). The v-series' 181,203 B
+  DTB came from the user's machine; the ROM dtb slot is MTK-wrapped, so
+  **`tools/mkdtb-from-bootimg.py`** scans the whole boot.img for embedded
+  FDTs, validates each (header bounds incl. off_mem_rsvmap, full structure
+  walk, >=8 nodes, /chosen + /memory present), refuses trees that do not
+  identify as merlin/mt6768, and writes the largest surviving candidate
+  (logs every candidate with offset/region/model/compatible). A different
+  firmware-version DTB/header than the user's backup is a deviation - if
+  v51 misbehaves at the LK/DTB level (e.g. shim banner shows DTB magic 0),
+  the fallback is `stock_boot_url` (dispatch input) pointing at the user's
+  own stock-boot.img for byte-exact v-series reproduction.
+- **`tools/verify-bootimg.py`** gates the packed image (the patch-skip-guard
+  philosophy for images): ANDROID!/v2/2048 header sanity; header clone equal
+  to stock modulo exactly the three 4-byte size fields; kernel slot gzips
+  back to the shim binary; ramdisk slot == payload bytes (SWEETXNU v1,
+  cmdline check); the payload-embedded ADT == the ADT file AND carries the
+  Linux arm,gic-v3 reg bytes GICD 0x0c000000/0x40000 + GICR
+  0x0c040000/0x200000 (the v49 decoy lesson, guarded forever); dtb slot ==
+  DTB file with FDT magic; file ends exactly at the paged dtb end.
+- **Local proof before spending CI runs** (all on this machine, no device):
+  - Artifact identities re-verified via the API: shim run 42489231291
+    (#57) = `shim-merlin.bin` SHA256 `288cf8b168d6...e2778a` (151,552 B) -
+    **the CI shim is byte-identical to the field-tested v42 binary** the
+    v45-v50 images booted (no toolchain drift). xnu #40 (42493163172)
+    `kernel.development.sweet` = `c713a04c72aa...a0f8cc` (17,205,064 B);
+    xnu #41 (42493186867) `kernel.debug.sweet` = `e301b13efe75...77144de`
+    (25,441,xxx B) - both match the session (3) ledger.
+  - End-to-end chain exercised locally with the real kernel/shim + a fresh
+    `merlin.adt` (9,948 B, same size as every v-series ADT): mkpayload
+    (payload-dev 16,609,824 B, payload-dbg 24,831,408 B - dbg ramdisk ends
+    0x495adbb0, clear of the 0x50000000 kernel band), mkbootimg with header
+    clone, verify-bootimg: **all 7 checks PASS** on both dev and dbg images
+    (with a synthetic stock boot.img; the ROM stock pair is proven by the
+    CI run below). Two extractor bugs were found and fixed during this:
+    FDT header is 10 words not 9 (off_mem_rsvmap was being read as
+    version), and the PROP len/nameoff pair is big-endian. Negative tests:
+    foreign-identity DTB and no-/chosen DTB are both refused loudly.
+- **image.yml design:** inputs `rom_url` (default pinned V12.0.3.0), 
+  `stock_boot_url` (skip ROM, use own backup), `dev_run_id` / `dbg_run_id` /
+  `shim_run_id` (default: newest green matching artifact - the kernel fetch
+  walks `gh run list -w xnu -s success` and downloads until it finds
+  `kernel.<config>.sweet`), `image_tag` (default v51), `build_images=false`
+  (staged firmware-only run), `skip_debug`. Artifacts: `merlin-stock-firmware`
+  (stock-boot.img + stock-merlin.dtb + header.txt) and
+  `merlin-boot-image-<tag>` (dev + dbg images, payloads, merlin.adt,
+  SHA256SUMS, FLASH-<tag>.md with flash instructions + the v49/v50 photo
+  decision tree). ROM download: bigota -> bn.d.miui.com mirror fallback,
+  resume + speed floor, stream-extract only `*boot.img` from the tgz.
+  Permissions pinned to contents:read + actions:read (gh run download
+  pattern proven by qemu.yml).
+- Deviation vs v50 (record before flashing): kernel is xnu #40
+  (`c713a04c`, includes 0089 - DEBUG-only code, DEVELOPMENT behavior
+  unchanged) instead of the 0088-only build `8532cdfc`; ADT freshly
+  generated (GICR reverted, same mkadt source); shim identical
+  (`288cf8b1`); header/DTB from the official ROM instead of the user's
+  backups. The photo decision tree is unchanged (the three SWEET GIC lines
+  decide the timer/GICR fix).
+- Dispatch results: recorded in the next session entry.

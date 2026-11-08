@@ -21,7 +21,7 @@ As of **2026-11-08** the full boot chain executes on the phone and **the Darwin 
 | Display | LK's panel stays alive through the handoff; 1080×2340 at a 4352-byte pitch; console clears and restarts at the top on wrap so the newest output is always at the bottom |
 | Faults | Shim-installed exception vectors: any pre-kernel fault paints a blue PANIC screen with ESR/ELR/FAR/SPSR/HCR and a stage marker naming the failing step |
 | CPU | One core (the boot Cortex-A55), 16K pages, GICv3 |
-| CI | Kernel builds on GitHub's macOS runners; QEMU smoke test boots each green kernel automatically |
+| CI | Kernel builds on GitHub's macOS runners; QEMU smoke test boots each green kernel automatically; the `image` workflow packages the flashable boot.img (kernel + shim artifacts + official-ROM stock header/DTB) on demand |
 
 ## What does not work (yet)
 
@@ -76,6 +76,22 @@ The workflow fetches xnu-8796 via [blacktop/darwin-xnu-build](https://github.com
 
 ### 3. Package the boot image
 
+All of it can run in CI: dispatch `image.yml` and download the
+`merlin-boot-image-<tag>` artifact (flashable `shim-boot-merlin-<tag>-dev.img` +
+DEBUG twin + payloads + stock firmware + a FLASH doc with the photo decision
+tree). It fetches the newest green kernel and shim artifacts, generates the
+ADT, pulls the stock `boot.img` from the official Xiaomi fastboot ROM
+(default: merlin global `V12.0.3.0.QJOMIXM`; bigota + bn mirrors, overridable),
+extracts the plain-FDT stock DTB from the MTK-wrapped dtb slot
+(`tools/mkdtb-from-bootimg.py`), packs with the stock header clone and
+verifies the result (`tools/verify-bootimg.py`: header clone modulo the 3 size
+fields, gzip slot = shim, payload = ADT + cmdline, the GICR v49 guard, exact
+file end) before anything is attached. Pass `stock_boot_url` to use your own
+stock backup instead of the ROM (byte-exact reproduction of the v-series
+inputs).
+
+The equivalent local commands (what the workflow runs):
+
 ```sh
 python3 tools/mkadt-merlin.py out/merlin.adt
 python3 tools/mkpayload.py xnu/out/kernel.development.sweet out/merlin.adt out/payload.bin \
@@ -83,6 +99,10 @@ python3 tools/mkpayload.py xnu/out/kernel.development.sweet out/merlin.adt out/p
 python3 tools/mkbootimg-merlin.py out/shim-boot-merlin.img \
     --kernel shim-merlin.bin --ramdisk out/payload.bin \
     --dtb dtb/stock-merlin.dtb --clone-header backup/stock-boot.img
+python3 tools/verify-bootimg.py out/shim-boot-merlin.img --stock backup/stock-boot.img \
+    --shim shim-merlin.bin --payload out/payload.bin \
+    --adt out/merlin.adt --dtb dtb/stock-merlin.dtb \
+    --cmdline 'debug=0xc serial=3 cpus=1 keepsyms=1 -enable_kprintf_spam -noprogress'
 ```
 
 `mkbootimg-merlin.py` gzips the kernel slot (rule 1) and clones the stock header (rule 2). Boot slots: kernel 0x40080000, ramdisk 0x47c80000, page 2048. The stock DTB is a device artifact (pulled from the phone, kept out of git).
@@ -120,7 +140,10 @@ The merlin kernel cannot mount it yet (no MSDC driver — M2), so flashing it no
 | `.github/workflows/xnu.yml` | Kernel CI build (macOS runner, patch-skip guard, verified KDK) |
 | `.github/workflows/shim.yml` | Shim cross-build (ubuntu) |
 | `.github/workflows/qemu.yml` | QEMU smoke test after each green kernel |
+| `.github/workflows/image.yml` | Packages the flashable boot.img in CI: kernel + shim artifacts, fresh ADT, stock header/DTB from the official ROM; verifies and attaches it with a FLASH doc |
 | `tools/mkadt-merlin.py` | Generates the merlin Apple Device Tree (GICv3, 13 MHz timer, fbcon, iPhone X identity) |
+| `tools/mkdtb-from-bootimg.py` | Extracts the plain-FDT stock merlin DTB from a stock boot.img (scans the MTK-wrapped dtb slot, validates the FDT, refuses foreign trees) |
+| `tools/verify-bootimg.py` | Verifies a packed image: header clone modulo the 3 size fields, gzip kernel slot, payload/ADT/cmdline, GICR v49 guard, exact file end |
 | `tools/mkbootimg-merlin.py` | The merlin boot v2 packer (gzip kernel slot, stock header clone) |
 | `tools/validate-repo.py` | Repo integrity checks (patch sequence incl. reverted numbers, script syntax) |
 | `tools/mkpayload.py` | Packs kernel + ADT + boot-args into the SWEETXNU payload |
