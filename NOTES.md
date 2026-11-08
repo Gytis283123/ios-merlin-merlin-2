@@ -726,6 +726,11 @@ user's photos:
 - Flash test after CI: **v50** = kernel 0088 + shim v42 (288cf8b1) +
   reverted ADT + stock DTB/header. Photo the screen; the three SWEET GIC
   lines decide the next fix.
+- **v50 READY: `out/shim-boot-merlin-v50-gicprobe.img`** SHA256
+  75d72f060d313927e9489219285e365320abcfc8571599d7fae26a7a7cfe33d7
+  (kernel 0088 8532cdfc..., payload 071a8b8f..., shim 288cf8b1...,
+  reverted GICR verified in the payload). CI run 42480655936 green,
+  0088 applied+guard passed.
 
 ### v45 top-of-screen decode: NO WALL - Darwin marched through kernel_bootstrap (2026-11-08)
 
