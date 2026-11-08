@@ -645,6 +645,51 @@ user's photos:
   the TRUE last output. Whatever it names is the real next wall - no
   more mosaic forensics.
 
+### ROOT CAUSE #3 FOUND AND FIXED: ADT GICR base was wrong - the vtimer PPI was never delivered (2026-11-08, v48 photo analysis)
+
+- v48 photo (kernel 0087 clear-at-wrap, read chronologically, newest at the
+  bottom): output stops after `SWEET BATTERY: static fallback ...` with the
+  cursor parked below it, no panic. BOTH console experiments (0086 scroll
+  first landing, 0087 clear-at-wrap) stop at the SAME line, so this is a
+  real wall, not a display artifact. Source-order mapping
+  (osfmk/kern/startup.c): the photo's tail (vnguard -> trust caches ->
+  PE -> AKS/WDT/SURF/HID/BATTERY) is PE_init_iokit + kernel_bootstrap past
+  STARTUP_SUB_EARLY_BOOT; the bootstrap thread was already inside bsd_init.
+  With a working timer, IOFindBSDRoot would print `!BSD` / `Waiting on
+  <dict>` / `Still waiting for root device` and finally
+  `panic("Failed to mount root device")` within ~90 s (no `rd=` in the
+  cmdline, no IOMedia driver). Nothing printed => the FIRST timeout-based
+  wait (`waitForMatchingService(..., 30 s)`, iokit/bsddev/IOKitBSDInit.cpp)
+  never returned => **timer callouts dead**.
+- Root cause: **mkadt-merlin.py gave the kernel GICR = 0x0c040000
+  (0x200000)**. The stock DT (mt6768.dts:1474, confirmed in the parsed
+  runtime DTB `repo/research/merlin/dtb-full.txt`) puts the redistributors
+  at **0x0c400000, size 0x40000** ("gic_cpu@0c400000"); 0x0c040000 is
+  INSIDE the GICD's 0x400000 window (reads 0, NS writes silently dropped).
+  pe_init_fiq (pexpert/arm/pe_fiq.c) therefore "found" cpu0's GICR at the
+  wrong address (GICR_TYPER reads 0, affinity 0 == boot MPIDR Aff 0) and
+  programmed a dead region: GICR_WAKER wake, IGROUPR0 Group-1 and
+  ISENABLER0 bit 27 (vtimer PPI, patch 0017 ADT value) never reached the
+  real redistributor. QEMU was unaffected (QEMU_GICR constant matched
+  QEMU's layout), which is why every QEMU smoke test passed.
+- **Fix (commit 1b15752, no kernel change, kernel 0087 5300d19b and shim
+  v42 288cf8b1 unchanged): mkadt-merlin.py GICR = 0x0c400000,
+  GICR_SIZE = 0x40000** (PE0 RD+SGI frames, GICR_PE_SIZE = 0x20000; extend
+  if M3/SMP needs more PEs). Verified: new reg bytes in the payload at
+  0xfd6de4, old bytes gone.
+- **Flash test: `out/shim-boot-merlin-v49-gicr.img`** SHA256
+  777e1b17f3725014e347b26ad67b1018f389412a6de5d11ab45b4ee94f0f921c
+  (payload 2c4c23c6..., shim re-extracted from the v48 image and
+  round-trip verified = 288cf8b1, stock DTB/header clone).
+- Expected if the fix is right: the boot gets PAST the silent wall -
+  `!BSD` and/or `Waiting on <dict>...` (IOMedia Apple_HFS match), then
+  `Still waiting for root device` + `panic("Failed to mount root device")`
+  (expected - M2 = eMMC/MSDC root driver is the next milestone and the
+  cmdline has no rd=), or mountroot retries if a ramdisk is added. A panic
+  screen with a readable message = SUCCESS for this test (timer works;
+  panic is the honest no-root-device outcome). Battery/vsync timers
+  (IOTimerEventSource) should also start working.
+
 ### v45 top-of-screen decode: NO WALL - Darwin marched through kernel_bootstrap (2026-11-08)
 
 - User photographed the TOP of the stuck screen (newest lines under the
