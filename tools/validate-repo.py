@@ -5,7 +5,10 @@
 
 Checks:
   1. Patch sequence in xnu/patches/:
-     - Sequential numbering starting at 0001 with no duplicates or gaps.
+     - Sequential numbering starting at 0001 with no duplicates.
+     - Gaps are only allowed for RETIRED_PATCHES (numbers dropped by git
+       revert - the repo convention never renumbers, so NOTES.md
+       references and historical artifact names stay valid).
      - Patch files are non-empty and have valid unified diff markers.
   2. Python script syntax:
      - All tools/*.py compile cleanly via py_compile.
@@ -16,9 +19,18 @@ import argparse, glob, os, py_compile, re, subprocess, sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# Patch numbers intentionally retired by reverting their commit (the file
+# disappears, the number is never reused). Update this table when reverting
+# a numbered patch; delete the entry if a number ever comes back.
+RETIRED_PATCHES = {
+    84: "sweet startup-hook trace - reverted (v43 regression, commit ac6fdaa)",
+    86: "sweet fbcon scroll - reverted (replaced by 0087, commit b622166)",
+}
+
 
 def green(text): return f"\033[92m{text}\033[0m"
 def red(text): return f"\033[91m{text}\033[0m"
+def yellow(text): return f"\033[93m{text}\033[0m"
 def bold(text): return f"\033[1m{text}\033[0m"
 
 
@@ -31,6 +43,7 @@ def validate_patches(verbose=False):
 
     errors = []
     seen_numbers = {}
+    stale_retired = []
 
     for path in patch_files:
         fname = os.path.basename(path)
@@ -43,6 +56,8 @@ def validate_patches(verbose=False):
         if num in seen_numbers:
             errors.append(f"Duplicate patch number {num:04d}: {fname} and {seen_numbers[num]}")
         seen_numbers[num] = fname
+        if num in RETIRED_PATCHES:
+            stale_retired.append(num)
 
         size = os.path.getsize(path)
         if size == 0:
@@ -54,16 +69,31 @@ def validate_patches(verbose=False):
             if not ('--- ' in head or 'diff ' in head or 'Index:' in head):
                 errors.append(f"Patch missing standard diff header: {fname}")
 
-    # Check contiguous sequence
+    # Check contiguous sequence (gaps allowed only for retired numbers)
+    retired_used = []
     if seen_numbers:
         sorted_nums = sorted(seen_numbers.keys())
         expected = 1
         for num in sorted_nums:
             if num != expected:
-                errors.append(f"Gap in patch sequence: expected {expected:04d}, found {num:04d} ({seen_numbers[num]})")
+                missing = list(range(expected, num))
+                unretired = [n for n in missing if n not in RETIRED_PATCHES]
+                if unretired:
+                    errors.append(
+                        f"Gap in patch sequence: expected {expected:04d}, found {num:04d} "
+                        f"({seen_numbers[num]}); missing "
+                        + ", ".join(f"{n:04d}" for n in unretired)
+                        + " not in RETIRED_PATCHES")
+                else:
+                    retired_used.extend(missing)
                 expected = num + 1
             else:
                 expected += 1
+
+    if stale_retired:
+        print(yellow(f"[!] RETIRED_PATCHES entries still present as files "
+                     f"(remove the stale entries): "
+                     + ", ".join(f"{n:04d}" for n in sorted(stale_retired))))
 
     if errors:
         print(red(f"[-] Patch validation failed with {len(errors)} error(s):"))
@@ -71,7 +101,14 @@ def validate_patches(verbose=False):
             print(f"    - {err}")
         return False
 
-    print(green(f"[✓] Validated {len(patch_files)} patches (0001-{len(patch_files):04d} contiguous, format OK)"))
+    if retired_used:
+        note = f" (retired: " + ", ".join(f"{n:04d}" for n in sorted(retired_used)) + ")"
+        print(yellow(f"[i] Sequence skips retired numbers "
+                     + ", ".join(f"{n:04d}: {RETIRED_PATCHES[n]}" for n in sorted(retired_used))))
+    else:
+        note = ""
+    top = max(seen_numbers) if seen_numbers else 0
+    print(green(f"[✓] Validated {len(patch_files)} patches (0001-{top:04d}{note}, format OK)"))
     return True
 
 
@@ -130,7 +167,7 @@ def main():
     ap.add_argument('-v', '--verbose', action='store_true', help='Show detailed per-file output')
     a = ap.parse_args()
 
-    print(bold("=== Running ios-sweet Repository Validation ==="))
+    print(bold("=== Running ios-merlin-merlin-2 Repository Validation ==="))
     ok_patches = validate_patches(a.verbose)
     ok_python = validate_python_scripts(a.verbose)
     ok_shell = validate_shell_scripts(a.verbose)

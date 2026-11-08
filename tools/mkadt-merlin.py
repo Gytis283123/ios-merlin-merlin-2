@@ -107,7 +107,8 @@ def build(seed=None, qemu=False):
     # Panic log carved off the top so the kernel never allocates over it.
     panic_base = phys_base + mem_size - PANIC_LOG_SIZE
     mem_size -= PANIC_LOG_SIZE
-    gicd, gicr, timebase = (QEMU_GICD, QEMU_GICR, QEMU_TIMEBASE) if qemu         else (GICD, GICR, TIMEBASE)
+    gicd, gicr, timebase = (QEMU_GICD, QEMU_GICR, QEMU_TIMEBASE) if qemu \
+        else (GICD, GICR, TIMEBASE)
     seed = seed if seed is not None else os.urandom(64)
     phandle = iter(range(1, 1000))
     ph = lambda: ('AAPL,phandle', u32(next(phandle)))
@@ -199,8 +200,8 @@ def build(seed=None, qemu=False):
     # the shim console draws to; panel stays alive through the handoff).
     fbcon = node('sweet-fbcon', [
         ph(),
-        ('reg', u64(FB, 2340 * FB_STRIDE)),
-                ('width', u32(FB_W)),
+        ('reg', u64(FB, FB_H * FB_STRIDE)),
+        ('width', u32(FB_W)),
         ('height', u32(FB_H)),
         ('stride', u32(FB_STRIDE)),
     ])
