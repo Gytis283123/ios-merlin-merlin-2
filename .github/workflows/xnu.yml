@@ -126,6 +126,18 @@ jobs:
           fi
           echo "no numbered patch skipped"
 
+      - name: Fail if the build produced no kernel
+        run: |
+          # keep_going (-k) lets make survive compile errors, and the Build
+          # step's exit code is tee's (0): a DEBUG-config run compiled
+          # nothing and still reported green with an empty xnu-kernel
+          # artifact (2026-11-08, run #39). Fail loudly instead.
+          ls -la dxb/fakeroot/System/Library/Kernels/ || true
+          if ! find dxb/fakeroot/System/Library/Kernels -maxdepth 1 -type f -name 'kernel*' | grep -q .; then
+            echo "::error::no kernel.* in the fakeroot - the build failed silently (see the compile errors above)."
+            exit 1
+          fi
+
       - name: Package build tree for local compiles
         if: always()
         run: |
