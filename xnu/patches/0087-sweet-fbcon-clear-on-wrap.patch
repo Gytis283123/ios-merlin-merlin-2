@@ -1,0 +1,24 @@
+--- a/pexpert/arm/pe_serial.c
++++ b/pexpert/arm/pe_serial.c
+@@ -736,7 +736,20 @@ static void
+ fbcon_newline(void)
+ {
+ 	fbcon_col = 0;
+-	fbcon_row = (fbcon_row + 1) % fbcon_rows;
++	if (fbcon_row + 1 >= fbcon_rows) {
++		/* patch 0087: clear and restart at the top on wrap. Scrolling
++		 * (a 10 MB wcomb memmove per line, patch 0086) tore the display
++		 * and crawling; wrapping left the frontier hidden at the top
++		 * with old lines at the bottom. A clear-and-restart costs the
++		 * same 10 MB but only once per 73 lines, and the newest output
++		 * always sits at the bottom like a normal console. */
++		for (uint32_t r = 0; r < fbcon_rows; r++) {
++			fbcon_clear_row(r);
++		}
++		fbcon_row = 0;
++	} else {
++		fbcon_row++;
++	}
+ 	fbcon_clear_row(fbcon_row);
+ 	fbcon_clear_row((fbcon_row + 1) % fbcon_rows);
+ }
