@@ -1,0 +1,53 @@
+--- a/pexpert/arm/pe_fiq.c
++++ b/pexpert/arm/pe_fiq.c
+@@ -213,6 +213,50 @@ pe_init_fiq()
+ 	}
+ 	__builtin_arm_wsr64("ICC_IGRPEN1_EL1", 1);
+ 	__builtin_arm_isb(ISB_SY);
++
++	{
++		/*
++		 * SWEET boot probe (0088): read back what the redistributor
++		 * and CPU interface actually accepted, then check whether the
++		 * virtual timer PPI becomes pending (CNTV_CTL.ISTATUS +
++		 * GICR_ISPENDR0 bit 27). Console output is proven up here
++		 * (0082 fbcon; panics from this function print). SGI frame is
++		 * RD frame + 0x10000; ISPENDR0 = SGI + 0x200.
++		 */
++#define SWEET_GICR_ISPENDR0 0x10200
++		uint64_t ctl_saved = __builtin_arm_rsr64("CNTV_CTL_EL0");
++		uint64_t cval_saved = __builtin_arm_rsr64("CNTV_CVAL_EL0");
++		uint64_t mpidr = __builtin_arm_rsr64("MPIDR_EL1");
++		uint64_t typer = gicr_read64(GICR_TYPER);
++		uint32_t waker = gicr_read32(GICR_WAKER);
++		uint32_t igrp = gicr_read32(GICR_IGROUPR0);
++		uint32_t isen = gicr_read32(GICR_ISENABLER0);
++		uint32_t gicd_rb = gicd_read32(GICD_CTLR);
++		uint64_t igrpen1 = __builtin_arm_rsr64("ICC_IGRPEN1_EL1");
++		uint64_t sre = __builtin_arm_rsr64("ICC_SRE_EL1");
++		uint32_t istatus = 0;
++		unsigned int spin;
++		kprintf("SWEET GIC: mpidr=%llx typer=%llx waker=%x igrp=%x isen=%x\n",
++		    mpidr, typer, waker, igrp, isen);
++		kprintf("SWEET GIC: gicd_ctlr=%x igrpen1=%llx sre=%llx\n",
++		    gicd_rb, igrpen1, sre);
++		/* One ~100 us shot @ 13 MHz, then poll the pending status. */
++		__builtin_arm_wsr64("CNTV_CVAL_EL0",
++		    __builtin_arm_rsr64("CNTVCT_EL0") + 1300);
++		__builtin_arm_wsr64("CNTV_CTL_EL0", CNTV_CTL_EL0_ENABLE);
++		for (spin = 0; spin < 130000; spin++) {
++			if (__builtin_arm_rsr64("CNTV_CTL_EL0") & CNTV_CTL_EL0_ISTATUS) {
++				istatus = 1;
++				break;
++			}
++		}
++		kprintf("SWEET GIC: tick istatus=%u pend=%x ctl=%llx\n", istatus,
++		    gicr_read32(SWEET_GICR_ISPENDR0),
++		    __builtin_arm_rsr64("CNTV_CTL_EL0"));
++		__builtin_arm_wsr64("CNTV_CVAL_EL0", cval_saved);
++		__builtin_arm_wsr64("CNTV_CTL_EL0", ctl_saved);
++		__builtin_arm_isb(ISB_SY);
++	}
+ #else
+ 	// Enable the forwarding of the vtimer interrupt
+ 	uint32_t gicd_ctlr = gicd_read32(GICD_CTLR);
