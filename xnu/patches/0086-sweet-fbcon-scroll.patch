@@ -1,0 +1,47 @@
+--- a/pexpert/arm/pe_serial.c
++++ b/pexpert/arm/pe_serial.c
+@@ -707,8 +707,8 @@ register_serial_functions(struct pe_serial_functions *fns)
+  *   reg    = <phys size>       absolute physical address, not arm-io relative
+  *   width, height              pixels
+  *   stride                     bytes per line, 32bpp
+- * Lines wrap back to the top instead of scrolling; the line after the cursor
+- * is kept blank so the newest output is easy to find.
++ * Lines scroll (patch 0086); the line after the cursor is kept blank so
++ * the newest output is easy to find.
+  */
+ 
+ extern unsigned char iso_font[256 * 16];
+@@ -732,11 +732,32 @@ fbcon_clear_row(uint32_t row)
+ 	}
+ }
+ 
++/* patch 0086: scroll instead of wrap. The wrap made every merlin boot
++ * photo a two-pass mosaic (newest lines at the top, oldest at the
++ * bottom) and the boot looked "stuck" wherever the seam fell. One row
++ * is 16*FBCON_SCALE pixel lines - ~140 KB per newline, negligible. */
++static void
++fbcon_scroll(void)
++{
++	volatile uint32_t *dst = fbcon_base;
++	volatile uint32_t *src = fbcon_base +
++	    (uint32_t)16 * FBCON_SCALE * (fbcon_stride / 4);
++	uint32_t words = (fbcon_rows - 1) * 16 * FBCON_SCALE * (fbcon_stride / 4);
++	for (uint32_t i = 0; i < words; i++) {
++		dst[i] = src[i];
++	}
++}
++
+ static void
+ fbcon_newline(void)
+ {
+ 	fbcon_col = 0;
+-	fbcon_row = (fbcon_row + 1) % fbcon_rows;
++	if (fbcon_row + 1 >= fbcon_rows) {
++		fbcon_scroll();
++		fbcon_row = fbcon_rows - 2;
++	} else {
++		fbcon_row++;
++	}
+ 	fbcon_clear_row(fbcon_row);
+ 	fbcon_clear_row((fbcon_row + 1) % fbcon_rows);
+ }
