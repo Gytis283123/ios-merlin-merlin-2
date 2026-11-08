@@ -834,3 +834,48 @@ v33 full-panel confirmation):
   this root yet; the image is staged for that milestone. Confirm the
   userdata partition is >= 16 GiB before flashing (if not, rebuild with a
   smaller SIZE argument; the fs only uses 12 GiB... can be trimmed).
+
+### Session 2026-11-08 (2): repo maintenance — validator revert-gap fix, merlin README (agent, no device action)
+
+- No kernel, shim, ADT, DTB or workflow changes: **no CI runs were spent and
+  none will trigger on push** (xnu.yml watches `xnu/patches/**`, shim.yml
+  watches `shim/**`; this session touched only tools/, docs and README).
+  Device state and the pending work are UNCHANGED: **v50
+  (`out/shim-boot-merlin-v50-gicprobe.img`, kernel 0088 8532cdfc, payload
+  071a8b8f, shim 288cf8b1, SHA256 75d72f06…) is still the flash test to
+  run**; its photo decides the timer/GICR next step per the decision tree
+  in the v49 entry.
+- **Bug found and fixed (commit f1c3015): `tools/validate-repo.py` failed on
+  the healthy tree** — its sequence check flagged the intentional 0084/0086
+  revert gaps as errors ("Repository integrity check FAILED"). Footgun: an
+  agent or user seeing that could have "fixed" it by renumbering the series,
+  breaking every NOTES.md patch reference and artifact name. Fix: a
+  documented `RETIRED_PATCHES` table (number → revert commit); gaps must
+  appear there, retired numbers present as files warn (stale entry), gaps
+  NOT listed remain errors. Verified both directions locally: the healthy
+  tree passes (86 patches, 0001-0088 modulo retired 0084/0086); removing
+  0087 still fails with "missing 0087 not in RETIRED_PATCHES". Banner
+  renamed to this repo. Also mkadt-merlin.py cosmetics (collapsed
+  conditional line, fbcon props indent, literal 2340 → FB_H; output
+  byte-identical 9948 B, warning about missing d22ap.adt as before).
+- **README rewritten for merlin (commit 816809d):** it was the upstream
+  sweet README verbatim (Redmi Note 10 Pro / SM7150 / UFS / fastboot boot /
+  "boots to home screen") — wrong for this repo on every axis. New content
+  is sourced from this file and the tree: current milestone state, the four
+  boot-format rules (gzip kernel slot, stock header clone, Xiaomi vbmeta
+  bits 24/25 @ offset 123, no fastboot boot), the chain diagram with the
+  EL2→EL1 drop, this repo's CI paths, the merlin packaging commands, the
+  merlin patch layer incl. retired 0084/0086, and the key MT6768 hardware
+  facts (GICD/GICR incl. the 0x0c400000 decoy, 13 MHz timer/INTID 27,
+  toprgu, OVL L0 live fb base + pitch 4352, eMMC/MSDC for M2, RAM map,
+  boot.img slots). docs/QEMU_TESTING.md got a merlin banner note (the
+  upstream guide still applies; qemu.yml derives the merlin twin at run
+  time).
+- Verified en route (observation, not change): `.github/workflows/qemu.yml`
+  `workflow_run.branches: [main]` is correct in the repo — an apparent
+  `branches: ain]` was an output-rendering artifact of the agent's tooling
+  (byte-verified with od); future agents should hex-verify any suspicious
+  `[m…` bracket text before "fixing" it.
+- Open item for the user (housekeeping, no rush): the GitHub token used for
+  this session's clone/push was shared in chat — revoke it and cut a fresh
+  one when convenient.
