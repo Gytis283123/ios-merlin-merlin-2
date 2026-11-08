@@ -68,13 +68,13 @@ jobs:
               -o out/stock-boot.img "${{ inputs.stock_boot_url }}"
           else
             # The Xiaomi d.miui.com CDN caps ~1.2 MB/s PER IP even on GitHub
-            # runners: single-stream 3.5 GB = ~50 min (image run 1), and
-            # 16-way parallel ranges did not go any faster (image run 2) -
-            # so: (a) try the Alibaba OSS mirror first, (b) exploit tar's
-            # sequential gzip: pull only a PREFIX of the archive and extract
-            # boot.img from it if it sits early (Xiaomi image tgz layout),
-            # cascading 512 MiB -> 1.5 GiB -> full only if needed, and
-            # (c) log throughput every 2 min for diagnosability.
+            # runners (single-stream AND 16-way parallel both, image runs 1-2)
+            # - but the Alibaba OSS mirror serves the full 3.5 GB in ~70 s.
+            # So: OSS mirror first, 16-way parallel ranges with stall guards,
+            # a throughput watchdog, per-part size verification, and the
+            # d.miui.com hosts only as slow fallbacks. (Prefix-cascade tried
+            # in run 4: boot.img sits AFTER the multi-GB images in the tgz,
+            # so a truncated archive yields nothing - full pull it is.)
             fetch_bytes() {  # $1 url $2 out $3 start $4 len
               local url="$1" out="$2" start="$3" len="$4" end parts chunk i s e exp act
               local pids=()
@@ -111,26 +111,19 @@ jobs:
               return 0
             }
             try_rom() {  # $1 url; sets BOOT on success
-              local url="$1" size stage
+              local url="$1" size
               size=$(curl -sIL --connect-timeout 20 "$url" | tr -d '\r' \
                      | awk 'tolower($1)=="content-length:"{s=$2} END{print s}')
               case "$size" in ''|*[!0-9]*) echo "  no content-length, skipping"; return 1;; esac
               echo "  archive size: $size bytes"
-              for stage in 536870912 1610612736 "$size"; do
-                echo "  == prefix stage: $stage bytes =="
-                rm -rf stock; mkdir -p stock
-                fetch_bytes "$url" "$BIG/rom-partial.bin" 0 "$stage" || return 1
-                tar -xzf "$BIG/rom-partial.bin" -C stock --wildcards '*boot.img' 2>&1 | tail -2 || true
-                BOOT=$(find stock -type f -name boot.img | head -1)
-                if [ -n "$BOOT" ] && [ "$(head -c 8 "$BOOT")" = "ANDROID!" ]; then
-                  echo "  boot.img extracted from the $stage-byte prefix"
-                  find stock -type f -printf '  member: %s %p\n' | sort -rn | head -10
-                  return 0
-                fi
-                echo "  prefix stage $stage: no boot.img yet; members so far:"
-                find stock -type f -printf '  %s %p\n' | sort -rn | head -8
-              done
-              return 1
+              rm -rf stock; mkdir -p stock
+              fetch_bytes "$url" "$BIG/merlin-rom.tgz" 0 "$size" || return 1
+              tar -xzf "$BIG/merlin-rom.tgz" -C stock --wildcards '*boot.img'
+              rm -f "$BIG"/merlin-rom.tgz "$BIG"/merlin-rom.tgz.part*
+              BOOT=$(find stock -type f -name boot.img | head -1)
+              [ -n "$BOOT" ] || { echo "  no boot.img in the archive"; return 1; }
+              find stock -type f -printf '  member: %s %p\n' | sort -rn | head -6
+              return 0
             }
             BIG=/mnt; [ -w /mnt ] || BIG="$RUNNER_TEMP"
             U="${{ inputs.rom_url }}"
