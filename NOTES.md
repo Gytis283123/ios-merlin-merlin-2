@@ -879,3 +879,72 @@ v33 full-panel confirmation):
 - Open item for the user (housekeeping, no rush): the GitHub token used for
   this session's clone/push was shared in chat — revoke it and cut a fresh
   one when convenient.
+
+### Session 2026-11-08 (3): full CI matrix — RELEASE/DEBUG configs proven, DEBUG fixed (0089), CI hardening (agent, no device action)
+
+- User asked for "all" CI actions. Dispatched every workflow and every
+  kernel config; three real repo bugs found and fixed on the way. No
+  device action; **v50 (`out/shim-boot-merlin-v50-gicprobe.img`, kernel
+  0088 8532cdfc, SHA256 75d72f06…) remains the flash test to run** —
+  nothing in this session changes the kernel the phone would boot
+  (0089 only touches DEBUG-only code paths; DEVELOPMENT kernel behavior
+  and boot path are unchanged).
+- **Run ledger** (all on main): xnu #37 DEVELOPMENT (dispatch, d575507)
+  ✅ `kernel.development.sweet` aad466ef…; qemu #19 (auto) ✅;
+  qemu #20 (manual) ✅; shim #57 (dispatch) ✅; xnu #38 RELEASE
+  (dispatch) ✅ `kernel.release.sweet` 7e23d8dc… (12.3 MB, stripped);
+  qemu #21 (auto after #38) ❌ pre-fix harness; qemu #22 (manual,
+  `kernel_run_id=42489225532` re-test) ✅; xnu #39 DEBUG (dispatch)
+  falsely ✅ with an EMPTY artifact; qemu #23 (auto after #39) ❌ (the
+  new fetch guard correctly refused the empty artifact); xnu #40
+  DEVELOPMENT (push @ 8532959, with 0089) ✅
+  `kernel.development.sweet` c713a04c…; qemu #24 (auto) ✅; xnu #41
+  DEBUG (dispatch @ 8532959) ✅ `kernel.debug.sweet` e301b13e…
+  (25.4 MB); qemu #25 (auto) ✅ `{"status": "incomplete_decode",
+  "unknown_glyphs": 464}` — full font decode (DEBUG kernel carries
+  `_iso_font`).
+- **Observation: RELEASE config builds and boots.** Kernel produces
+  with no source changes; qemu boots it as `{"status": "not_decoded"}`
+  (RELEASE strips `_iso_font` and every non-KPI symbol; fb.png, regs,
+  serial and the exception log are still captured). Useful for a
+  slimmer on-device test kernel later.
+- **Observation: DEBUG config never compiled on xnu-8796** (and still
+  does not on xnu-10002.81.5 — same four bugs verbatim). Four upstream
+  errors, all in DEBUG-only code paths (machine_routines.c `#if DEBUG`
+  kprintf using nonexistent `bad_page_cnt`; sched_proto.c — which is
+  only compiled in DEBUG configs — referencing undeclared
+  `max_unsafe_rt/fixed_quanta` and passing the RT tunable to the fixed
+  setter; vm_pageout.c `#if UPL_DEBUG` member typo `uple_create_btref`;
+  profile_prvd.c `ASSERT(MUTEX_HELD(...))` where MUTEX_HELD does not
+  exist in XNU). Fixed by patch **0089** (commit 09ee8e5): compute the
+  bad-page count, declare the externs, pass the right tunable, fix the
+  typo, use `LCK_MTX_ASSERT_DEBUG`. Patch context built against the
+  reconstructed post-0001-0088 tree (kprintf hunk anchors at line 1825
+  matching run #39's error log); applies cleanly and was proven by runs
+  #40/#41 (DEVELOPMENT unchanged, DEBUG green).
+- **CI bug 1 (commit 202ad34):** qemu.yml hardcoded
+  `kernel.development.sweet` — after the RELEASE build the auto boot
+  test went red on `sha256sum`. Now detects the kernel file (any
+  config) from the artifact and exports `KERNEL_BIN`.
+- **CI bug 2 (commit c859f60):** the qemu harness refused to boot
+  kernels without exactly one `_iso_font` symbol ("kernel must contain
+  exactly one _iso_font symbol") — RELEASE kernels are stripped, so
+  this would permanently break the auto-boot pipeline whenever RELEASE
+  is the latest green build. Harness now falls back to no-font mode
+  (boot runs, result `not_decoded`). Also added the `kernel_run_id`
+  input to qemu.yml's workflow_dispatch so any green xnu run's kernel
+  can be boot-tested on demand (used to re-test RELEASE as #22).
+- **CI bug 3 (commit 8532959):** with keep_going, `make -k` survives
+  compile errors and the Build step's exit code is tee's — run #39
+  (DEBUG, 4 compile errors) reported GREEN with an empty xnu-kernel
+  artifact. xnu.yml now fails if the fakeroot has no `kernel.*` file.
+  This is the guard that makes every future silently-broken build red.
+- **Capability now proven end to end:** all three workflows dispatchable
+  with inputs; qemu auto-fires after every green xnu run; artifacts and
+  logs retrievable via the API. Three kernel configs buildable on
+  demand: DEVELOPMENT (the bring-up workhorse), RELEASE (slim, boots),
+  DEBUG (assertions + full symbol table — boots in QEMU with complete
+  fb decode; the natural kernel for the on-device GIC probe debugging
+  if more verbosity is ever needed).
+- Still open from the previous session: revoke the GitHub token that
+  was shared in chat and cut a fresh one.
