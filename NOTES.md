@@ -645,6 +645,36 @@ user's photos:
   the TRUE last output. Whatever it names is the real next wall - no
   more mosaic forensics.
 
+### v45 top-of-screen decode: NO WALL - Darwin marched through kernel_bootstrap (2026-11-08)
+
+- User photographed the TOP of the stuck screen (newest lines under the
+  wrap console). Decoded chronologically: VM bootstrap done -> SUBSYS 9
+  (KTRACE) -> 10 (PERCPU) -> 11 (EVENT) -> OSLog configured (firehose 16
+  chunks, queues 8x32768) -> Telemetry -> Scheduler quanta -> SUBSYS 13
+  -> mach_kobj_count=374, IPC_PTHREAD_PRIORITY init -> SUBSYS 14
+  (panic_trace, kdp_core zlib) -> serial KDP init -> SUBSYS 15
+  (MACH_IPC, "iBoot version: merlin-shim" - Darwin reads our shim
+  identity from the boot args!) -> "boot"/"name"/"ABPL_phandle" not a
+  kext (kext scanning!) -> SUBSYS 16 (THREAD_CALL, thread_max=2560) ->
+  SWEET PRNG/pthread/AMFI registered -> vnguard MAC policy loaded ->
+  trust caches unavailable -> ... platform expert, AppleKeyStore,
+  IOSurface, HID, battery are IOKit-start-era lines in the same stream.
+- **There was never a wall at the zone maps/battery: all of it was the
+  73-row wrap mosaic.** The frontier at photo time was around SUBSYS
+  17 (SYSCTL) / 18 (EARLY_BOOT = bsd_init + IOKit start).
+- 0086 scroll REVERTED (per-line 10 MB wcomb memmove tore and crawled;
+  first scroll lands right at the battery line - matches the user's
+  report exactly). Replaced by **0087 (CI 42475622222, applied,
+  kernel 5300d19b): clear-and-restart at wrap** - no per-line copying;
+  the screen always shows the newest 73 lines in order, frontier at the
+  BOTTOM. CI also gained a KDK sha256-verified install with 22G91/22G90
+  fallbacks (the dortania CDN 503'd 22G74 for ~2h today).
+- **Flash test: `out/shim-boot-merlin-v48-clearwrap.img`** SHA256
+  c937a94b…2d87. Photo the BOTTOM of the screen when it stops: that is
+  the true frontier now. Expect either bsd_init/IOKit progress lines,
+  mountroot retries (M2 = eMMC driver next), or a panic - all readable
+  directly, no mosaic decoding.
+
 ### DISPLAY SOLVED (2026-11-07 evening, v6-v33, user-confirmed full panel)
 
 
