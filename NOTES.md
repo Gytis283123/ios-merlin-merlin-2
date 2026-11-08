@@ -1022,4 +1022,61 @@ v33 full-panel confirmation):
   (`288cf8b1`); header/DTB from the official ROM instead of the user's
   backups. The photo decision tree is unchanged (the three SWEET GIC lines
   decide the timer/GICR fix).
-- Dispatch results: recorded in the next session entry.
+- **Run ledger (workflow `image`):**
+  - image #1 (42499899103, firmware-only): FAIL - bigota single-stream
+    died mid-download at ~52 min; measured: **d.miui.com caps ~1.2 MB/s
+    PER IP** on GitHub runners too.
+  - image #2 (42504699574, firmware-only): FAIL - 16-way parallel ranges
+    did no better (same per-IP cap), 35-min step timeout. Logs empty
+    (runner killed mid-step).
+  - image #3 (42508024983, firmware-only): FAIL - **self-deadlock**: the
+    parts were complete at +2 min (watchdog log proves it) but a bare
+    `wait` also waited on the throughput-watchdog subshell -> step hung
+    to the 55-min cap. Fix: `wait "${pids[@]}"` on the curl PIDs only.
+  - image #4 (42513186396, firmware-only): **GREEN** - the Alibaba OSS
+    mirror (bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1) serves the
+    full 3.5 GB at ~50-70 MB/s (~68 s); boot.img extracted (67,108,864 B,
+    ANDROID! v2 header, page 2048, dtb slot @0x4bc80000, header_size 1660,
+    os_version 0x14000147 vs the user backup's 0x16000157 - different
+    firmware version, same layout); DTB extracted from the MTK-wrapped
+    dtb slot: 108,879 B, fdt v17, **553 nodes, model MT6768, compatible
+    mediatek,MT6768**, /chosen + /memory present, msdc0 + gic500 (the
+    decoy) nodes all consistent with the hardware facts. Prefix stages
+    (512 MiB / 1.5 GiB) extracted NOTHING: boot.img sits after the
+    multi-GB images in the tgz - cascade removed (commit ce879fc).
+  - image #5 (42513754159, FULL BUILD, @ce879fc): **GREEN, ~2.5 min**.
+    Kernel picker worked as designed (skipped the DEBUG run for the dev
+    image: "run 42493186867: not a development kernel, trying older").
+    Inputs: shim run 42489231291 (288cf8b1, byte-identical to v45-v50),
+    dev kernel run 42493163172 (#40, c713a04c, 0088+0089), dbg kernel run
+    42493186867 (#41, e301b13e), stock = V12.0.3.0 ROM. Artifacts:
+    `merlin-boot-image-v51` (25.4 MiB: both images, both payloads,
+    merlin.adt, SHA256SUMS, FLASH-v51.md) + `merlin-stock-firmware`
+    (stock-boot.img + stock-merlin.dtb + header.txt).
+- **v51 READY (the pending flash test, downloadable):**
+  - `shim-boot-merlin-v51-dev.img` SHA256
+    `ba5f47709cb57ce9db4ccbc23105e6b70f4bf79f0e4a771c532884fa73e98d54`
+    (16,732,160 B; payload-dev `5161d8439ae71cec4a9ed4ebd71f50ccf68a7c66cf4a50c62ed6cd1629b6c66e`,
+    16,609,824 B)
+  - `shim-boot-merlin-v51-dbg.img` SHA256
+    `6fd95d3f5b9601363e8b35e327653d5cbb735e2a84559f74fe49361021518bb3`
+    (24,952,832 B; payload-dbg `608f3f88bac9fd4e4fddda138bd313882816a8959a7d9dbdb853d92de69d8aae`,
+    24,831,408 B)
+  - merlin.adt `423bd2d1b56258d3e675f9d273296efcacf364d498454e1159360c83abbaf135`
+    (9,948 B), stock-merlin.dtb `26afaecddf7907d7cf4ce0d69a0cedfa7fbec429aa2052ab22a1d8f67dbdd5e8`
+    (108,879 B), stock-boot.img `6f1aa4abfc99ef24392135de28ba2a9faea780c34b279746812812e4fb8644f4`
+    (67,108,864 B).
+  - Both images re-verified INDEPENDENTLY on the agent machine against the
+    downloaded artifacts (verify-bootimg: all 7 checks PASS, SHAs match
+    the manifest byte-for-byte).
+  - What to do: flash `-dev`, photo the BOTTOM of the screen (the three
+    `SWEET GIC:` lines decide the timer/GICR fix per the v49/v50 decision
+    tree - it is reproduced in FLASH-v51.md inside the artifact). `-dbg`
+    only if the dev photo is inconclusive.
+  - Fallback if v51 misbehaves at the LK/DTB level (shim banner shows DTB
+    magic 0 / no boot at all - i.e. a DTB-provenance problem, NOT the
+    expected timer wall): re-dispatch image.yml with `stock_boot_url`
+    pointing at the user's own backup/stock-boot.img (e.g. attached to a
+    GitHub release) for byte-exact v-series inputs, or use the local v50
+    (out/shim-boot-merlin-v50-gicprobe.img, 75d72f06...) that is already
+    READY on the user's Windows machine.
