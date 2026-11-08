@@ -2,6 +2,17 @@
 
 This document explains how to test the patched Apple XNU kernel for the Redmi Note 10 Pro (`sweet`, SM7150) in QEMU virtual machine without touching physical hardware or risking device user data.
 
+> **merlin note (ios-merlin-merlin-2):** this guide documents the upstream
+> sweet harness (`tools/qemu-sweet.py`), which is still the basis of the QEMU
+> smoke test in this repo. For the Redmi Note 9 (`merlin`, MT6768),
+> `.github/workflows/qemu.yml` builds the merlin ADT (`mkadt-merlin.py
+> --qemu`: QEMU's GICD/GICR at 0x08000000/0x080a0000, CNTFRQ 62.5 MHz, INTID
+> 27) and derives a merlin-geometry twin of this harness (framebuffer
+> 0x7e605000, 1080x2340) at run time. Everything below applies; only the
+> addresses and panel geometry differ. See NOTES.md for the merlin QEMU
+> results (e.g. the GICR-0x0c400000 ADT bug that every QEMU boot passed and
+> the phone did not).
+
 ---
 
 ## 1. Overview
