@@ -73,10 +73,11 @@ jobs:
             # so: (a) try the Alibaba OSS mirror first, (b) exploit tar's
             # sequential gzip: pull only a PREFIX of the archive and extract
             # boot.img from it if it sits early (Xiaomi image tgz layout),
-            # cascading 288 MiB -> 1.2 GiB -> full only if needed, and
+            # cascading 512 MiB -> 1.5 GiB -> full only if needed, and
             # (c) log throughput every 2 min for diagnosability.
             fetch_bytes() {  # $1 url $2 out $3 start $4 len
               local url="$1" out="$2" start="$3" len="$4" end parts chunk i s e exp act
+              local pids=()
               end=$(( start + len - 1 ))
               parts=16
               chunk=$(( (len + parts - 1) / parts ))
@@ -90,9 +91,14 @@ jobs:
                 [ "$e" -gt "$end" ] && e=$end
                 [ "$s" -gt "$end" ] && break
                 curl -s --retry 4 --retry-delay 5 --retry-all-errors --connect-timeout 20 \
+                     --speed-time 60 --speed-limit 10240 \
                      -r "$s-$e" -o "$out.part$(printf '%02d' "$i")" "$url" &
+                pids+=("$!")
               done
-              wait
+              # wait ONLY for the curl jobs - a bare `wait` would also wait
+              # for the watchdog subshell above and deadlock forever
+              # (image run 3: parts complete in 2 min, step hung 55 min).
+              wait "${pids[@]}"
               kill "$WATCH" 2>/dev/null || true
               for i in $(seq 0 $((parts - 1))); do
                 s=$(( start + i * chunk )); [ "$s" -gt "$end" ] && break
@@ -100,7 +106,8 @@ jobs:
                 act=$(stat -c%s "$out.part$(printf '%02d' "$i")" 2>/dev/null || echo 0)
                 [ "$act" = "$exp" ] || { echo "  part $i: $act/$exp bytes"; return 1; }
               done
-              cat "$out".part* > "$out" && rm -f "$out".part*
+              cat "$out".part* > "$out" || return 1
+              rm -f "$out".part*
               return 0
             }
             try_rom() {  # $1 url; sets BOOT on success
@@ -109,7 +116,7 @@ jobs:
                      | awk 'tolower($1)=="content-length:"{s=$2} END{print s}')
               case "$size" in ''|*[!0-9]*) echo "  no content-length, skipping"; return 1;; esac
               echo "  archive size: $size bytes"
-              for stage in 301989888 1288490188 "$size"; do
+              for stage in 536870912 1610612736 "$size"; do
                 echo "  == prefix stage: $stage bytes =="
                 rm -rf stock; mkdir -p stock
                 fetch_bytes "$url" "$BIG/rom-partial.bin" 0 "$stage" || return 1
