@@ -59,7 +59,7 @@ jobs:
           sudo apt-get install -y device-tree-compiler
 
       - name: Fetch stock firmware (boot.img)
-        timeout-minutes: 35
+        timeout-minutes: 55
         run: |
           mkdir -p out stock
           if [ -n "${{ inputs.stock_boot_url }}" ]; then
@@ -67,57 +67,81 @@ jobs:
             curl -fL --retry 5 --retry-delay 10 --retry-all-errors \
               -o out/stock-boot.img "${{ inputs.stock_boot_url }}"
           else
-            # The Xiaomi CDN throttles a single connection to ~1.2 MB/s even
-            # from GitHub runners (3.5 GB = ~50 min, image run #1 died in the
-            # download). Pull 16 HTTP ranges in parallel instead: ~16x that.
-            fetch_rom() {
-              local url="$1" out="$2" size parts chunk i start end exp act
-              size=$(curl -sIL --connect-timeout 20 "$url" | tr -d '\r' \
-                     | awk 'tolower($1)=="content-length:"{s=$2} END{print s}')
-              case "$size" in ''|*[!0-9]*) echo "  no content-length"; return 1;; esac
-              echo "  size: $size bytes, 16-way parallel ranges"
+            # The Xiaomi d.miui.com CDN caps ~1.2 MB/s PER IP even on GitHub
+            # runners: single-stream 3.5 GB = ~50 min (image run 1), and
+            # 16-way parallel ranges did not go any faster (image run 2) -
+            # so: (a) try the Alibaba OSS mirror first, (b) exploit tar's
+            # sequential gzip: pull only a PREFIX of the archive and extract
+            # boot.img from it if it sits early (Xiaomi image tgz layout),
+            # cascading 288 MiB -> 1.2 GiB -> full only if needed, and
+            # (c) log throughput every 2 min for diagnosability.
+            fetch_bytes() {  # $1 url $2 out $3 start $4 len
+              local url="$1" out="$2" start="$3" len="$4" end parts chunk i s e exp act
+              end=$(( start + len - 1 ))
               parts=16
-              chunk=$(( (size + parts - 1) / parts ))
+              chunk=$(( (len + parts - 1) / parts ))
+              rm -f "$out".part*
+              ( while :; do sleep 120
+                  echo "  [watch $(date -u +%H:%M:%S)] $(du -cb "$out".part* 2>/dev/null | tail -1 | cut -f1) bytes"
+                done ) &
+              local WATCH=$!
               for i in $(seq 0 $((parts - 1))); do
-                start=$(( i * chunk )); end=$(( start + chunk - 1 ))
-                [ "$end" -ge "$size" ] && end=$(( size - 1 ))
-                curl -s --retry 4 --retry-delay 5 --retry-all-errors \
-                     --connect-timeout 20 \
-                     -r "$start-$end" -o "$out.part$(printf '%02d' "$i")" "$url" &
+                s=$(( start + i * chunk )); e=$(( s + chunk - 1 ))
+                [ "$e" -gt "$end" ] && e=$end
+                [ "$s" -gt "$end" ] && break
+                curl -s --retry 4 --retry-delay 5 --retry-all-errors --connect-timeout 20 \
+                     -r "$s-$e" -o "$out.part$(printf '%02d' "$i")" "$url" &
               done
               wait
-              ls -la "$out".part* | head -20
+              kill "$WATCH" 2>/dev/null || true
               for i in $(seq 0 $((parts - 1))); do
-                [ $(( i * chunk )) -ge "$size" ] && break
-                exp=$(( size - i * chunk )); [ "$exp" -gt "$chunk" ] && exp=$chunk
+                s=$(( start + i * chunk )); [ "$s" -gt "$end" ] && break
+                exp=$(( end - s + 1 )); [ "$exp" -gt "$chunk" ] && exp=$chunk
                 act=$(stat -c%s "$out.part$(printf '%02d' "$i")" 2>/dev/null || echo 0)
                 [ "$act" = "$exp" ] || { echo "  part $i: $act/$exp bytes"; return 1; }
               done
-              cat "$out".part* > "$out"
-              rm -f "$out".part*
-              [ "$(stat -c%s "$out")" = "$size" ] || return 1
-              echo "  download complete: $size bytes"
+              cat "$out".part* > "$out" && rm -f "$out".part*
+              return 0
+            }
+            try_rom() {  # $1 url; sets BOOT on success
+              local url="$1" size stage
+              size=$(curl -sIL --connect-timeout 20 "$url" | tr -d '\r' \
+                     | awk 'tolower($1)=="content-length:"{s=$2} END{print s}')
+              case "$size" in ''|*[!0-9]*) echo "  no content-length, skipping"; return 1;; esac
+              echo "  archive size: $size bytes"
+              for stage in 301989888 1288490188 "$size"; do
+                echo "  == prefix stage: $stage bytes =="
+                rm -rf stock; mkdir -p stock
+                fetch_bytes "$url" "$BIG/rom-partial.bin" 0 "$stage" || return 1
+                tar -xzf "$BIG/rom-partial.bin" -C stock --wildcards '*boot.img' 2>&1 | tail -2 || true
+                BOOT=$(find stock -type f -name boot.img | head -1)
+                if [ -n "$BOOT" ] && [ "$(head -c 8 "$BOOT")" = "ANDROID!" ]; then
+                  echo "  boot.img extracted from the $stage-byte prefix"
+                  find stock -type f -printf '  member: %s %p\n' | sort -rn | head -10
+                  return 0
+                fi
+                echo "  prefix stage $stage: no boot.img yet; members so far:"
+                find stock -type f -printf '  %s %p\n' | sort -rn | head -8
+              done
+              return 1
             }
             BIG=/mnt; [ -w /mnt ] || BIG="$RUNNER_TEMP"
             U="${{ inputs.rom_url }}"
-            ROMS="$U"
-            for h in "bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com" "bn.d.miui.com"; do
-              M="${U/bigota.d.miui.com/$h}"
-              [ "$M" != "$U" ] && ROMS="$ROMS $M"
+            OSS="${U/bigota.d.miui.com/bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com}"
+            BN="${U/bigota.d.miui.com/bn.d.miui.com}"
+            MIRRORS="$OSS"
+            for m in "$U" "$BN"; do
+              case " $MIRRORS " in *" $m "*) ;; *) MIRRORS="$MIRRORS $m";; esac
             done
             ok=""
-            for u in $ROMS; do
+            for u in $MIRRORS; do
               echo "downloading ROM: $u"
-              rm -f "$BIG"/merlin-rom.tgz "$BIG"/merlin-rom.tgz.part*
-              if fetch_rom "$u" "$BIG/merlin-rom.tgz"; then ok=1; break; fi
+              if try_rom "$u"; then ok=1; break; fi
               echo "mirror failed: $u"
             done
             [ -n "$ok" ] || { echo "::error::ROM download failed on all mirrors"; exit 1; }
-            tar -xzf "$BIG/merlin-rom.tgz" -C stock --wildcards '*boot.img'
-            rm -f "$BIG/merlin-rom.tgz"
-            BOOT=$(find stock -type f -name boot.img | head -1)
-            [ -n "$BOOT" ] || { echo "::error::no boot.img in the ROM"; exit 1; }
             cp "$BOOT" out/stock-boot.img
+            rm -f "$BIG"/rom-partial.bin "$BIG"/rom-partial.bin.part*
           fi
           [ "$(head -c 8 out/stock-boot.img)" = "ANDROID!" ] \
             || { echo "::error::stock boot.img has no ANDROID! magic"; exit 1; }
