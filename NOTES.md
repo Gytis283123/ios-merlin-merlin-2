@@ -690,6 +690,43 @@ user's photos:
   panic is the honest no-root-device outcome). Battery/vsync timers
   (IOTimerEventSource) should also start working.
 
+### v49 RESULT: GICR 0x0c400000 was WRONG - revert + probe patch 0088 (2026-11-08, photo)
+
+- v49 flashed: **panic at `find_gicr_pe_base: cannot find GICR base for
+  core 0 @pe_fiq.c:73`** early in boot (console + panic output fine at
+  that stage). So 0x0c400000 reads all-ones for NS = unmapped, and the
+  walk found no affinity-0 TYPER.
+- Cross-check in the BSP kernel source
+  (`repo/research/merlin/Xiaomi_Kernel_OpenSource-merlin-r-oss`): NO
+  driver binds `mediatek,gic500`/`mediatek,gic_cpu` - Linux's
+  irq-gic-v3.c binds the runtime DTB's `/interrupt-controller`
+  (arm,gic-v3) node: **GICD 0x0c000000/0x40000, GICR 0x0c040000/0x200000,
+  sysirq 0x0c53a650**. The stock OS boots with GICR = 0x0c040000, so the
+  ORIGINAL ADT was right and the timer wall is NOT the GICR address.
+  (The gic500@0c000000/gic_cpu@0c400000 nodes are legacy MTK-internal.)
+- IMPORTANT: the earlier "match" at 0x0c040000 never proved the
+  redistributor is real - GICR_TYPER reads 0 on a dead region too
+  (affinity 0 == boot MPIDR affinity 0 = false positive). The wall could
+  be (a) the whole 0x0c040000 window dead for NS (unlikely - Linux uses
+  it), (b) redistributor writes silently dropped by the ATF security
+  state (GICR_NSACR), or (c) programming fine and delivery broken
+  (GICD/CPU-interface state, CNTHCTL, ...).
+- **Patch 0088 (commit 72322a7, CI 42480655936): pe_init_fiq boot probe**
+  after the SWEET GIC programming: readback prints
+  `SWEET GIC: mpidr= typer= waker= igrp= isen=` (TYPER must carry PPIDR
+  = MPIDR 0x81000000<<32 if the redistributor is real),
+  `SWEET GIC: gicd_ctlr= igrpen1= sre=`, and a one-shot vtimer pending
+  test (`SWEET GIC: tick istatus= pend= ctl=` - CVAL=now+100us, poll
+  CNTV_CTL.ISTATUS, read GICR_ISPENDR0 bit 27; values restored after).
+  Decision tree: typer=0 -> GICR window dead; isen/igrp not sticking ->
+  NSACR-class denial; istatus=0 -> timer/counter itself dead; istatus=1
+  + pend bit27 -> GICR fine, delivery path broken; istatus=1 + no pend
+  -> enable/group routing lost.
+- **mkadt-merlin.py GICR reverted to 0x0c040000/0x200000** (same commit).
+- Flash test after CI: **v50** = kernel 0088 + shim v42 (288cf8b1) +
+  reverted ADT + stock DTB/header. Photo the screen; the three SWEET GIC
+  lines decide the next fix.
+
 ### v45 top-of-screen decode: NO WALL - Darwin marched through kernel_bootstrap (2026-11-08)
 
 - User photographed the TOP of the stuck screen (newest lines under the
