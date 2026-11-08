@@ -25,7 +25,7 @@ import argparse, json, os, shutil, socket, struct, subprocess, sys, time, zlib
 FB_BASE, FB_W, FB_H = 0x9c000000, 1080, 2400
 FB_STRIDE = FB_W * 4
 PAGE = 0x4000
-STUB_PA = 0x40200000	# above the dtb QEMU places at RAM base
+STUB_PA = 0x40200000    # above the dtb QEMU places at RAM base
 BOOT_LINE_LENGTH = 608
 
 
@@ -108,7 +108,7 @@ def write_png(path, raw):
     rows = []
     for y in range(FB_H):
         line = raw[y * FB_STRIDE:(y + 1) * FB_STRIDE]
-        rgb = bytearray(FB_W * 3)	# a8r8g8b8 little endian = B G R A in memory
+        rgb = bytearray(FB_W * 3)       # a8r8g8b8 little endian = B G R A in memory
         rgb[0::3], rgb[1::3], rgb[2::3] = line[2::4], line[1::4], line[0::4]
         rows.append(b'\0' + bytes(rgb))
     chunk = lambda t, d: struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d))
@@ -183,7 +183,7 @@ def qmp(sock_path, *cmds, pmemsave=None):
         if 'error' in r:
             print(f'qmp {c!r}: {r["error"]}', file=sys.stderr)
         out.append(r.get('return', ''))
-    if pmemsave:	# native QMP: HMP's argument parser chokes on '-' in paths
+    if pmemsave:        # native QMP: HMP's argument parser chokes on '-' in paths
         r = call('pmemsave', val=pmemsave[0], size=pmemsave[1], filename=pmemsave[2])
         if 'error' in r:
             print(f'qmp pmemsave: {r["error"]}', file=sys.stderr)
@@ -256,9 +256,15 @@ def main():
         symbols = subprocess.check_output(['llvm-nm', '--defined-only', a.kernel], text=True)
         fonts = [int(line.split()[0], 16) for line in symbols.splitlines()
                  if line.split()[-1:] == ['_iso_font']]
-        if len(fonts) != 1:
-            ap.error('kernel must contain exactly one _iso_font symbol')
-        font = payload_data(payload, fonts[0], 256 * 16)
+        if len(fonts) == 1:
+            font = payload_data(payload, fonts[0], 256 * 16)
+        else:
+            # RELEASE kernels are stripped of non-KPI symbols (_iso_font
+            # included). Boot anyway: fb.png, regs.txt, serial.txt and the
+            # QEMU exception log are still captured; result.json reports
+            # not_decoded instead of decoded console text.
+            print(f'[!] {len(fonts)} _iso_font symbols in the kernel (stripped '
+                  'RELEASE build?); framebuffer text decoding skipped', file=sys.stderr)
     os.makedirs(a.outdir, exist_ok=True)
     out = os.path.abspath(a.outdir)
 

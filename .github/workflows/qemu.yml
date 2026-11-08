@@ -2,6 +2,10 @@ name: qemu
 
 on:
   workflow_dispatch:
+    inputs:
+      kernel_run_id:
+        description: "xnu run id whose xnu-kernel artifact to boot (default: latest green)"
+        default: ""
   workflow_run:
     workflows: [xnu]
     types: [completed]
@@ -33,7 +37,11 @@ jobs:
 
       - name: Fetch latest green kernel artifact
         run: |
-          RUN_ID=$(gh run list -R "$GITHUB_REPOSITORY" -w xnu -s success -L 1 --json databaseId -q '.[0].databaseId')
+          if [ -n "${{ inputs.kernel_run_id }}" ]; then
+            RUN_ID="${{ inputs.kernel_run_id }}"
+          else
+            RUN_ID=$(gh run list -R "$GITHUB_REPOSITORY" -w xnu -s success -L 1 --json databaseId -q '.[0].databaseId')
+          fi
           echo "kernel run: $RUN_ID"
           gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -n xnu-kernel -D artifacts/kernel
           ls -la artifacts/kernel/
