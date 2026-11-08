@@ -1,0 +1,73 @@
+--- a/bsd/dev/dtrace/profile_prvd.c
++++ b/bsd/dev/dtrace/profile_prvd.c
+@@ -503,7 +503,7 @@
+ 	cyc_time_t when;
+ 
+ 	ASSERT(prof->prof_interval != 0);
+-	ASSERT(MUTEX_HELD(&cpu_lock));
++	LCK_MTX_ASSERT_DEBUG(&cpu_lock, LCK_MTX_ASSERT_OWNED);
+ 
+ 	if (prof->prof_kind == PROF_TICK) {
+ 		hdlr.cyh_func = profile_tick;
+@@ -539,7 +539,7 @@
+ 	profile_probe_t *prof = parg;
+ 
+ 	ASSERT(prof->prof_cyclic != CYCLIC_NONE);
+-	ASSERT(MUTEX_HELD(&cpu_lock));
++	LCK_MTX_ASSERT_DEBUG(&cpu_lock, LCK_MTX_ASSERT_OWNED);
+ 
+ #pragma unused(arg,id)
+ 	if (prof->prof_kind == PROF_TICK) {
+--- a/osfmk/arm64/machine_routines.c
++++ b/osfmk/arm64/machine_routines.c
+@@ -1822,7 +1822,9 @@
+ 	vm_page_kernelcache_count -= freed_kernelcache_pages;
+ 	vm_page_unlock_queues();
+ #if     DEBUG
+-	kprintf("ml_static_mfree: Released 0x%x pages at VA %p, size:0x%llx, last ppn: 0x%x, +%d bad\n", freed_pages, (void *)vaddr, (uint64_t)size, ppn, bad_page_cnt);
++	kprintf("ml_static_mfree: Released 0x%x pages at VA %p, size:0x%llx, last ppn: 0x%x, +%d bad\n",
++	    freed_pages, (void *)vaddr, (uint64_t)size, ppn,
++	    (int)(((trunc_page_64(vaddr + size) - vaddr) / PAGE_SIZE) - freed_pages));
+ #endif
+ }
+ 
+--- a/osfmk/kern/sched_proto.c
++++ b/osfmk/kern/sched_proto.c
+@@ -214,6 +214,8 @@
+ decl_simple_lock_data(static, global_runq_lock);
+ 
+ extern int      max_unsafe_quanta;
++extern int      max_unsafe_rt_quanta;
++extern int      max_unsafe_fixed_quanta;
+ 
+ static uint32_t proto_quantum_us;
+ static uint32_t proto_quantum;
+@@ -256,7 +258,7 @@
+ 	default_timeshare_constraint = proto_quantum;
+ 
+ 	sched_set_max_unsafe_rt_quanta(max_unsafe_rt_quanta);
+-	sched_set_max_unsafe_fixed_quanta(max_unsafe_rt_quanta);
++	sched_set_max_unsafe_fixed_quanta(max_unsafe_fixed_quanta);
+ }
+ 
+ static void
+--- a/osfmk/vm/vm_pageout.c
++++ b/osfmk/vm/vm_pageout.c
+@@ -5534,7 +5534,7 @@
+ #endif
+ 
+ #if UPL_DEBUG
+-	upl->uple_create_btref = btref_get(__builtin_frame_address(0), 0);
++	upl->upl_create_btref = btref_get(__builtin_frame_address(0), 0);
+ #endif /* UPL_DEBUG */
+ 
+ 	return upl;
+@@ -5607,7 +5607,7 @@
+ 	for (int i = 0; i < upl->upl_commit_index; i++) {
+ 		btref_put(upl->upl_commit_records[i].c_btref);
+ 	}
+-	btref_put(upl->uple_create_btref);
++	btref_put(upl->upl_create_btref);
+ #endif /* UPL_DEBUG */
+ 
+ 	if ((upl->flags & UPL_LITE) && pages) {
