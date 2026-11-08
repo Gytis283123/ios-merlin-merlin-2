@@ -38,11 +38,15 @@ PANIC_LOG_SIZE = 0x100000
 # /arm-io children are relative to this; must not be 0 (serial_init bails)
 SOC_BASE = 0x01000000
 
-# mt6768.dts: arm,gic-v3; distributor 0x0c000000 (0x40000), one
-# redistributor region 0x0c040000 (0x200000, 8 PEs). Runtime DTB timer node:
-# vtimer PPI 11 -> INTID 27, clock-frequency 0xc65d40 = 13 MHz.
+# mt6768.dts:1474 gic_cpu@0c400000 { reg = <0 0x0c400000 0 0x40000> } — the
+# redistributor frames sit at 0x0c400000 (RD_base +0, SGI_base +0x20000),
+# NOT 0x0c040000 (that address is inside the GICD's 0x400000 window, where
+# reads are 0 and NS writes are silently dropped — the wrong base made
+# pe_init_fiq "enable" the vtimer PPI on a dead region and the kernel hung
+# silently at the first timeout wait, right after the IOKit driver prints).
+# Runtime DTB timer node: vtimer PPI 11 -> INTID 27, 13 MHz (0xc65d40).
 GICD, GICD_SIZE = 0x0c000000, 0x40000
-GICR, GICR_SIZE = 0x0c040000, 0x200000
+GICR, GICR_SIZE = 0x0c400000, 0x40000
 VTIMER_INTID = 27
 TIMEBASE = 13000000
 
